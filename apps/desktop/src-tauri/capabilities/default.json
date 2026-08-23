@@ -6,6 +6,9 @@
   "permissions": [
     "core:default",
     "dialog:allow-open",
-    "fs:allow-read-text-file"
+    "dialog:allow-save",
+    "dialog:allow-message",
+    "fs:allow-read-text-file",
+    "fs:allow-write-text-file"
   ]
 }

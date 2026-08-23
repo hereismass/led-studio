@@ -1,30 +1,41 @@
 import {
   createProject,
+  parseProject,
   parseProjectJson,
+  serializeProject,
   type Project,
 } from '@led-studio/project-format';
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { projectExamples } from './examples';
-import { selectProjectFile, type SelectedProjectFile } from './projectFiles';
+import {
+  nativeProjectFileGateway,
+  type OpenedProjectFile,
+  type ProjectFileGateway,
+  type ProjectFileReference,
+} from './projectFiles';
 
 const DEFAULT_HARDWARE_PROFILE = 'kms-4-string-31-inlay-v1';
 
-type ProjectSource =
-  { kind: 'example' } | { kind: 'file'; fileName: string } | { kind: 'new' };
+type ProjectOrigin = 'example' | 'file' | 'new';
 
 interface ActiveProject {
+  file: ProjectFileReference | null;
+  isDirty: boolean;
+  origin: ProjectOrigin;
   project: Project;
-  source: ProjectSource;
 }
 
 interface AppProps {
-  openProjectFile?: () => Promise<SelectedProjectFile | null>;
+  fileGateway?: ProjectFileGateway;
 }
 
 interface ValidationIssue {
   message: string;
   path: PropertyKey[];
 }
+
+type SaveFeedback =
+  { kind: 'error'; message: string } | { kind: 'success'; message: string };
 
 function isValidationError(
   error: unknown,
@@ -52,37 +63,91 @@ function describeProjectError(error: unknown): string {
   return 'This is not a valid LED Studio project.';
 }
 
-function sourceDescription(source: ProjectSource): string {
-  if (source.kind === 'file') {
-    return `Local file · ${source.fileName}`;
+function sourceDescription(activeProject: ActiveProject): string {
+  if (activeProject.file) {
+    return `Local file · ${activeProject.file.fileName}`;
   }
 
-  return source.kind === 'example' ? 'Bundled example' : 'New project';
+  return activeProject.origin === 'example'
+    ? 'Unsaved project · Based on bundled example'
+    : 'Unsaved new project';
 }
 
 function ProjectPreview({
   activeProject,
+  isSaving,
   onChooseAnother,
+  onSave,
+  onSaveAs,
+  saveFeedback,
 }: {
   activeProject: ActiveProject;
+  isSaving: boolean;
   onChooseAnother: () => void;
+  onSave: () => void;
+  onSaveAs: () => void;
+  saveFeedback: SaveFeedback | null;
 }) {
-  const { project, source } = activeProject;
+  const { project } = activeProject;
   const colours = Object.entries(project.palette);
 
   return (
     <main className="app-shell">
-      <button className="back-button" type="button" onClick={onChooseAnother}>
-        <span aria-hidden="true">←</span> Choose another project
-      </button>
+      <div className="project-toolbar">
+        <button
+          className="back-button"
+          type="button"
+          disabled={isSaving}
+          onClick={onChooseAnother}
+        >
+          <span aria-hidden="true">←</span> Choose another project
+        </button>
+
+        <div className="save-actions" aria-label="Save actions">
+          <button
+            aria-keyshortcuts="Meta+S Control+S"
+            aria-label="Save"
+            type="button"
+            disabled={isSaving}
+            onClick={onSave}
+          >
+            {isSaving ? 'Saving…' : 'Save'}
+            <kbd>⌘S</kbd>
+          </button>
+          <button
+            aria-keyshortcuts="Meta+Shift+S Control+Shift+S"
+            aria-label="Save As"
+            type="button"
+            disabled={isSaving}
+            onClick={onSaveAs}
+          >
+            Save As
+            <kbd>⇧⌘S</kbd>
+          </button>
+        </div>
+      </div>
 
       <header className="app-header project-header">
         <div>
-          <p className="eyebrow">{sourceDescription(source)}</p>
+          <p className="eyebrow">{sourceDescription(activeProject)}</p>
           <h1>{project.name}</h1>
         </div>
-        <span className="version-badge">Schema v{project.schemaVersion}</span>
+        <div className="project-badges">
+          {activeProject.isDirty ? (
+            <span className="unsaved-badge">Unsaved</span>
+          ) : null}
+          <span className="version-badge">Schema v{project.schemaVersion}</span>
+        </div>
       </header>
+
+      {saveFeedback ? (
+        <div
+          className={`save-feedback save-feedback-${saveFeedback.kind}`}
+          role={saveFeedback.kind === 'error' ? 'alert' : 'status'}
+        >
+          {saveFeedback.message}
+        </div>
+      ) : null}
 
       <section className="project-card" aria-labelledby="hardware-heading">
         <div className="project-heading">
@@ -127,42 +192,50 @@ function ProjectPreview({
   );
 }
 
-export function App({ openProjectFile = selectProjectFile }: AppProps) {
+export function App({ fileGateway = nativeProjectFileGateway }: AppProps) {
   const [activeProject, setActiveProject] = useState<ActiveProject | null>(
     null,
   );
-  const [error, setError] = useState<string | null>(null);
+  const [launcherError, setLauncherError] = useState<string | null>(null);
+  const [saveFeedback, setSaveFeedback] = useState<SaveFeedback | null>(null);
   const [isOpening, setIsOpening] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   function createNewProject() {
-    setError(null);
+    setLauncherError(null);
+    setSaveFeedback(null);
     setActiveProject({
+      file: null,
+      isDirty: true,
+      origin: 'new',
       project: createProject({
         name: 'Untitled Project',
         hardwareProfile: DEFAULT_HARDWARE_PROFILE,
       }),
-      source: { kind: 'new' },
     });
   }
 
   function loadExample(index: number) {
-    setError(null);
+    setLauncherError(null);
+    setSaveFeedback(null);
     setActiveProject({
-      project: projectExamples[index].project,
-      source: { kind: 'example' },
+      file: null,
+      isDirty: true,
+      origin: 'example',
+      project: parseProject(projectExamples[index].project),
     });
   }
 
   async function openExistingProject() {
-    setError(null);
+    setLauncherError(null);
     setIsOpening(true);
 
-    let selectedFile: SelectedProjectFile | null;
+    let selectedFile: OpenedProjectFile | null;
 
     try {
-      selectedFile = await openProjectFile();
+      selectedFile = await fileGateway.openProject();
     } catch {
-      setError('LED Studio could not read the selected file.');
+      setLauncherError('LED Studio could not read the selected file.');
       setIsOpening(false);
       return;
     }
@@ -173,14 +246,138 @@ export function App({ openProjectFile = selectProjectFile }: AppProps) {
     }
 
     try {
+      setSaveFeedback(null);
       setActiveProject({
+        file: {
+          fileName: selectedFile.fileName,
+          path: selectedFile.path,
+        },
+        isDirty: false,
+        origin: 'file',
         project: parseProjectJson(selectedFile.contents),
-        source: { kind: 'file', fileName: selectedFile.fileName },
       });
     } catch (projectError) {
-      setError(describeProjectError(projectError));
+      setLauncherError(describeProjectError(projectError));
     } finally {
       setIsOpening(false);
+    }
+  }
+
+  const saveActiveProject = useCallback(
+    async (forceSaveAs = false): Promise<boolean> => {
+      if (!activeProject || isSaving) {
+        return false;
+      }
+
+      setSaveFeedback(null);
+      setIsSaving(true);
+
+      try {
+        const contents = serializeProject(activeProject.project);
+
+        if (forceSaveAs || activeProject.file === null) {
+          const savedFile = await fileGateway.saveProjectAs(
+            activeProject.project.name,
+            contents,
+          );
+
+          if (savedFile === null) {
+            return false;
+          }
+
+          setActiveProject((currentProject) =>
+            currentProject
+              ? {
+                  ...currentProject,
+                  file: savedFile,
+                  isDirty: false,
+                  origin: 'file',
+                }
+              : null,
+          );
+          setSaveFeedback({
+            kind: 'success',
+            message: `Saved ${savedFile.fileName}.`,
+          });
+          return true;
+        }
+
+        await fileGateway.saveProject(activeProject.file.path, contents);
+        setActiveProject((currentProject) =>
+          currentProject ? { ...currentProject, isDirty: false } : null,
+        );
+        setSaveFeedback({
+          kind: 'success',
+          message: `Saved ${activeProject.file.fileName}.`,
+        });
+        return true;
+      } catch {
+        setSaveFeedback({
+          kind: 'error',
+          message: 'LED Studio could not save this project.',
+        });
+        return false;
+      } finally {
+        setIsSaving(false);
+      }
+    },
+    [activeProject, fileGateway, isSaving],
+  );
+
+  useEffect(() => {
+    if (!activeProject) {
+      return;
+    }
+
+    function handleSaveShortcut(event: KeyboardEvent) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
+        event.preventDefault();
+        void saveActiveProject(event.shiftKey);
+      }
+    }
+
+    window.addEventListener('keydown', handleSaveShortcut);
+    return () => window.removeEventListener('keydown', handleSaveShortcut);
+  }, [activeProject, saveActiveProject]);
+
+  async function chooseAnotherProject() {
+    if (!activeProject) {
+      return;
+    }
+
+    if (!activeProject.isDirty) {
+      setActiveProject(null);
+      setSaveFeedback(null);
+      return;
+    }
+
+    let decision;
+
+    try {
+      decision = await fileGateway.confirmUnsavedProject(
+        activeProject.project.name,
+      );
+    } catch {
+      setSaveFeedback({
+        kind: 'error',
+        message: 'LED Studio could not confirm how to handle this project.',
+      });
+      return;
+    }
+
+    if (decision === 'cancel') {
+      return;
+    }
+
+    if (decision === 'discard') {
+      setActiveProject(null);
+      setSaveFeedback(null);
+      return;
+    }
+
+    if (await saveActiveProject()) {
+      setActiveProject(null);
+      setSaveFeedback(null);
     }
   }
 
@@ -188,7 +385,11 @@ export function App({ openProjectFile = selectProjectFile }: AppProps) {
     return (
       <ProjectPreview
         activeProject={activeProject}
-        onChooseAnother={() => setActiveProject(null)}
+        isSaving={isSaving}
+        onChooseAnother={() => void chooseAnotherProject()}
+        onSave={() => void saveActiveProject()}
+        onSaveAs={() => void saveActiveProject(true)}
+        saveFeedback={saveFeedback}
       />
     );
   }
@@ -235,7 +436,7 @@ export function App({ openProjectFile = selectProjectFile }: AppProps) {
           </span>
           <span>
             <strong>{isOpening ? 'Opening…' : 'Open project'}</strong>
-            <small>Select and validate a JSON project from your Mac.</small>
+            <small>Select and validate an LED Studio or JSON project.</small>
           </span>
           <span className="launcher-card-arrow" aria-hidden="true">
             →
@@ -243,10 +444,10 @@ export function App({ openProjectFile = selectProjectFile }: AppProps) {
         </button>
       </section>
 
-      {error ? (
+      {launcherError ? (
         <div className="launcher-error" role="alert">
           <strong>Could not open project</strong>
-          <p>{error}</p>
+          <p>{launcherError}</p>
         </div>
       ) : null}
 

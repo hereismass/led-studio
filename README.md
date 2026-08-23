@@ -28,7 +28,7 @@ pnpm dev
 
 The second command starts the Vite development server and opens it in a Tauri window.
 
-On startup, choose to create an untitled project, open and validate a local JSON project, or load a bundled example. Opening is read-only for now; the application does not write back to the selected file.
+On startup, choose to create an untitled project, open and validate a local project, or load a bundled example as an unsaved template. Save writes to the current file, while Save As chooses a new `.ledstudio` destination. New and example-derived projects use Save As for their first save. The app also accepts `.json` files when opening.
 
 ## Tests and checks
 
@@ -56,8 +56,8 @@ pnpm build
 
 Version 1 deliberately contains only a schema version, required project name, opaque hardware-profile identifier, and named colour palette. Project names and hardware-profile identifiers must be non-empty. A hardware profile will eventually describe LED numbering and physical layout separately; the current project format does not embed bass-specific geometry.
 
-Project files are validated at runtime with Zod. See [`examples/kms-4-string-31-inlay-v1.ledstudio.json`](examples/kms-4-string-31-inlay-v1.ledstudio.json).
+Project files are JSON documents validated at runtime with Zod and use the `.ledstudio` extension. See [`examples/kms-4-string-31-inlay-v1.ledstudio`](examples/kms-4-string-31-inlay-v1.ledstudio).
 
 ## Deliberately out of scope
 
-There is currently no scene editor, timeline, playback engine, animation system, song model, tempo model, MIDI or Ableton integration, Bluetooth, USB communication, OLED or footswitch support, firmware, device-package export, backend, cloud service, account system, database, or external API.
+There is currently no project-content editor, autosave, native File menu, scene editor, timeline, playback engine, animation system, song model, tempo model, MIDI or Ableton integration, Bluetooth, USB communication, OLED or footswitch support, firmware, device-package export, backend, cloud service, account system, database, or external API.

@@ -1,13 +1,23 @@
 import { describe, expect, it } from 'vitest';
-import exampleProjectJson from '../../../examples/kms-4-string-31-inlay-v1.ledstudio.json';
 import {
   ProjectSchema,
   createProject,
   parseProject,
   parseProjectJson,
+  serializeProject,
+  type Project,
 } from '../src/index.js';
 
-const validProject = exampleProjectJson;
+const validProject: Project = {
+  schemaVersion: 1,
+  name: 'KMS 4-String Bass Example',
+  hardwareProfile: 'kms-4-string-31-inlay-v1',
+  palette: {
+    'hot-pink': '#FF2B9A',
+    'electric-green': '#45FF72',
+    black: '#000000',
+  },
+};
 
 describe('ProjectSchema', () => {
   it('accepts a version 1 project', () => {
@@ -119,5 +129,15 @@ describe('project creation and JSON parsing', () => {
 
   it('rejects valid JSON that is not a project', () => {
     expect(() => parseProjectJson('{"schemaVersion":1}')).toThrow();
+  });
+
+  it('serializes a validated project as formatted JSON', () => {
+    expect(serializeProject(validProject)).toBe(
+      `${JSON.stringify(validProject, null, 2)}\n`,
+    );
+  });
+
+  it('validates a project again before serialization', () => {
+    expect(() => serializeProject({ ...validProject, name: '' })).toThrow();
   });
 });

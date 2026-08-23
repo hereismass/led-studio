@@ -40,6 +40,10 @@ export function parseProjectJson(json: string): Project {
   return parseProject(JSON.parse(json) as unknown);
 }
 
+export function serializeProject(project: Project): string {
+  return `${JSON.stringify(parseProject(project), null, 2)}\n`;
+}
+
 export function createProject({
   name,
   hardwareProfile,
