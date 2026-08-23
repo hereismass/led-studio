@@ -1,0 +1,24 @@
+{
+  "name": "led-studio",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@11.13.1",
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0",
+    "pnpm": ">=11"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @led-studio/desktop tauri dev",
+    "build": "pnpm --filter @led-studio/desktop tauri build",
+    "build:web": "pnpm --filter @led-studio/desktop build",
+    "test": "pnpm --recursive --if-present test",
+    "typecheck": "pnpm --recursive --if-present typecheck",
+    "check:rust": "cargo check --locked --manifest-path apps/desktop/src-tauri/Cargo.toml",
+    "format": "prettier --write . && cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml",
+    "format:check": "prettier --check . && cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml -- --check",
+    "check": "pnpm format:check && pnpm typecheck && pnpm test && pnpm build:web && pnpm check:rust"
+  },
+  "devDependencies": {
+    "prettier": "^3.9.6"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "name": "KMS 4-String Bass Example",
+  "hardwareProfile": "kms-4-string-31-inlay-v1",
+  "palette": {
+    "hot-pink": "#FF2B9A",
+    "electric-green": "#45FF72",
+    "black": "#000000"
+  }
+}
