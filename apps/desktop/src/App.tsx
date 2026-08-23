@@ -36,25 +36,46 @@ export function App({
       return;
     }
 
-    function handleSaveShortcut(event: KeyboardEvent) {
+    function handleEditorShortcut(event: KeyboardEvent) {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
         event.preventDefault();
         void session.save(event.shiftKey);
+        return;
+      }
+
+      const target = event.target;
+      const isEditable =
+        target instanceof HTMLElement &&
+        (target.isContentEditable ||
+          ['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName));
+      if (
+        !isEditable &&
+        (event.metaKey || event.ctrlKey) &&
+        event.key.toLowerCase() === 'z'
+      ) {
+        event.preventDefault();
+        if (event.shiftKey) session.redo();
+        else session.undo();
       }
     }
 
-    window.addEventListener('keydown', handleSaveShortcut);
-    return () => window.removeEventListener('keydown', handleSaveShortcut);
-  }, [activeProject, session.save]);
+    window.addEventListener('keydown', handleEditorShortcut);
+    return () => window.removeEventListener('keydown', handleEditorShortcut);
+  }, [activeProject, session.redo, session.save, session.undo]);
 
   if (activeProject) {
     return (
       <ProjectWorkspace
         activeProject={activeProject}
+        canRedo={activeProject.future.length > 0}
+        canUndo={activeProject.past.length > 0}
         operation={session.state.operation}
         onChooseAnother={() => void session.requestChooseAnother()}
+        onExecuteCommand={session.executeCommand}
+        onRedo={session.redo}
         onSave={() => void session.save()}
         onSaveAs={() => void session.save(true)}
+        onUndo={session.undo}
         saveFeedback={session.state.saveFeedback}
       />
     );

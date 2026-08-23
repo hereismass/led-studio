@@ -5,6 +5,9 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
+import type { EditorCommand } from './editorCommands';
+import { PaletteInspector } from './PaletteInspector';
+import { ProjectTitleEditor } from './ProjectTitleEditor';
 import {
   isProjectDirty,
   type ActiveProjectSession,
@@ -34,9 +37,14 @@ type ResizablePanel = 'bottom' | 'left' | 'right';
 
 interface ProjectWorkspaceProps {
   activeProject: ActiveProjectSession;
+  canRedo: boolean;
+  canUndo: boolean;
   onChooseAnother: () => void;
+  onExecuteCommand: (command: EditorCommand) => void;
+  onRedo: () => void;
   onSave: () => void;
   onSaveAs: () => void;
+  onUndo: () => void;
   operation: ProjectOperation;
   saveFeedback: SaveFeedback | null;
 }
@@ -60,21 +68,89 @@ function PanelPlaceholder({ description, title }: PanelPlaceholderProps) {
 
 export function ProjectWorkspace({
   activeProject,
+  canRedo,
+  canUndo,
   onChooseAnother,
+  onExecuteCommand,
+  onRedo,
   onSave,
   onSaveAs,
+  onUndo,
   operation,
   saveFeedback,
 }: ProjectWorkspaceProps) {
-  const { project } = activeProject;
-  const colours = Object.entries(project.palette);
+  const { project } = activeProject.present;
+  const colours = project.palette;
   const isBusy = operation !== 'idle';
   const [bottomPanel, setBottomPanel] = useState<BottomPanel>('show');
   const [layout, setLayout] = useState(loadWorkspaceLayout);
+  const [selectedTokenId, setSelectedTokenId] = useState<string | null>(null);
+  const [focusTokenId, setFocusTokenId] = useState<string | null>(null);
+  const pendingNewTokenIdsRef = useRef<Set<string> | null>(null);
   const stopResizeRef = useRef<(() => void) | null>(null);
+  const selectedToken =
+    colours.find((token) => token.id === selectedTokenId) ?? null;
 
   useEffect(() => saveWorkspaceLayout(layout), [layout]);
   useEffect(() => () => stopResizeRef.current?.(), []);
+  useEffect(() => {
+    const previousIds = pendingNewTokenIdsRef.current;
+    if (previousIds) {
+      const addedToken = colours.find((token) => !previousIds.has(token.id));
+      pendingNewTokenIdsRef.current = null;
+      if (addedToken) {
+        setSelectedTokenId(addedToken.id);
+        setFocusTokenId(addedToken.id);
+        return;
+      }
+    }
+
+    if (
+      selectedTokenId !== null &&
+      !colours.some((token) => token.id === selectedTokenId)
+    ) {
+      setSelectedTokenId(null);
+      setFocusTokenId(null);
+    }
+  }, [colours, selectedTokenId]);
+
+  function selectCreatedToken(command: EditorCommand) {
+    pendingNewTokenIdsRef.current = new Set(colours.map((token) => token.id));
+    onExecuteCommand(command);
+  }
+
+  function deleteSelectedToken() {
+    if (!selectedToken) return;
+    const index = colours.findIndex((token) => token.id === selectedToken.id);
+    const nearestToken = colours[index + 1] ?? colours[index - 1] ?? null;
+    setSelectedTokenId(nearestToken?.id ?? null);
+    setFocusTokenId(null);
+    onExecuteCommand({
+      id: selectedToken.id,
+      type: 'palette-token-deleted',
+    });
+  }
+
+  function navigatePalette(
+    index: number,
+    event: ReactKeyboardEvent<HTMLButtonElement>,
+  ) {
+    let nextIndex: number | null = null;
+    if (event.key === 'ArrowDown')
+      nextIndex = Math.min(index + 1, colours.length - 1);
+    if (event.key === 'ArrowUp') nextIndex = Math.max(index - 1, 0);
+    if (event.key === 'Home') nextIndex = 0;
+    if (event.key === 'End') nextIndex = colours.length - 1;
+    if (nextIndex === null || nextIndex === index) return;
+
+    event.preventDefault();
+    const token = colours[nextIndex];
+    setSelectedTokenId(token.id);
+    setFocusTokenId(null);
+    window.setTimeout(() =>
+      document.getElementById(`palette-token-${token.id}`)?.focus(),
+    );
+  }
 
   function togglePanel(panel: ResizablePanel) {
     setLayout((current) => ({
@@ -157,9 +233,18 @@ export function ProjectWorkspace({
           </button>
           <div className="workspace-title">
             <div>
-              <h1>{project.name}</h1>
+              <ProjectTitleEditor
+                name={project.name}
+                onCommit={(name) =>
+                  onExecuteCommand({ name, type: 'project-renamed' })
+                }
+              />
               {isProjectDirty(activeProject) ? (
-                <span className="workspace-dirty-status">Unsaved</span>
+                <span className="workspace-dirty-status">
+                  {activeProject.source.kind === 'file'
+                    ? 'Modified'
+                    : 'Unsaved'}
+                </span>
               ) : (
                 <span className="workspace-saved-status">Saved</span>
               )}
@@ -189,6 +274,28 @@ export function ProjectWorkspace({
         </div>
 
         <div className="workspace-actions">
+          <div className="workspace-history-actions" aria-label="Edit history">
+            <button
+              className="workspace-icon-button"
+              type="button"
+              aria-label="Undo"
+              aria-keyshortcuts="Meta+Z Control+Z"
+              disabled={!canUndo}
+              onClick={onUndo}
+            >
+              <span aria-hidden="true">↶</span>
+            </button>
+            <button
+              className="workspace-icon-button"
+              type="button"
+              aria-label="Redo"
+              aria-keyshortcuts="Meta+Shift+Z Control+Shift+Z"
+              disabled={!canRedo}
+              onClick={onRedo}
+            >
+              <span aria-hidden="true">↷</span>
+            </button>
+          </div>
           <span className="profile-chip" title={project.hardwareProfile}>
             {project.hardwareProfile}
           </span>
@@ -264,24 +371,58 @@ export function ProjectWorkspace({
               <section className="asset-section">
                 <div className="asset-section-heading">
                   <h3>Palette</h3>
-                  <span>{colours.length}</span>
+                  <div>
+                    <span>{colours.length}</span>
+                    <button
+                      className="asset-add-button"
+                      type="button"
+                      onClick={() =>
+                        selectCreatedToken({ type: 'palette-token-added' })
+                      }
+                    >
+                      <span aria-hidden="true">＋</span>
+                      Add colour
+                    </button>
+                  </div>
                 </div>
                 {colours.length === 0 ? (
                   <p className="asset-empty-copy">No palette colours yet</p>
                 ) : (
-                  <div className="asset-palette-list">
-                    {colours.map(([name, colour]) => (
-                      <div className="asset-colour" key={name}>
+                  <div
+                    className="asset-palette-list"
+                    role="listbox"
+                    aria-label="Palette colours"
+                  >
+                    {colours.map((token, index) => (
+                      <button
+                        className="asset-colour"
+                        type="button"
+                        role="option"
+                        aria-selected={selectedTokenId === token.id}
+                        id={`palette-token-${token.id}`}
+                        key={token.id}
+                        tabIndex={
+                          selectedTokenId === token.id ||
+                          (selectedTokenId === null && index === 0)
+                            ? 0
+                            : -1
+                        }
+                        onClick={() => {
+                          setSelectedTokenId(token.id);
+                          setFocusTokenId(null);
+                        }}
+                        onKeyDown={(event) => navigatePalette(index, event)}
+                      >
                         <span
                           className="asset-colour-swatch"
-                          style={{ backgroundColor: colour }}
+                          style={{ backgroundColor: token.value }}
                           aria-hidden="true"
                         />
                         <span>
-                          <strong>{name}</strong>
-                          <small>{colour}</small>
+                          <strong>{token.name}</strong>
+                          <small>{token.value}</small>
                         </span>
-                      </div>
+                      </button>
                     ))}
                   </div>
                 )}
@@ -395,30 +536,55 @@ export function ProjectWorkspace({
             </div>
           ) : (
             <div className="inspector-content">
-              <section className="inspector-section">
-                <p className="workspace-eyebrow">Project</p>
-                <dl>
-                  <div>
-                    <dt>Profile</dt>
-                    <dd>{project.hardwareProfile}</dd>
-                  </div>
-                  <div>
-                    <dt>Format</dt>
-                    <dd>Schema v{project.schemaVersion}</dd>
-                  </div>
-                  <div>
-                    <dt>Palette</dt>
-                    <dd>
-                      {colours.length}{' '}
-                      {colours.length === 1 ? 'colour' : 'colours'}
-                    </dd>
-                  </div>
-                </dl>
-              </section>
-              <PanelPlaceholder
-                title="Nothing selected"
-                description="Selection-specific controls will appear here."
-              />
+              {selectedToken ? (
+                <PaletteInspector
+                  key={selectedToken.id}
+                  focusName={focusTokenId === selectedToken.id}
+                  palette={colours}
+                  token={selectedToken}
+                  onDelete={deleteSelectedToken}
+                  onDuplicate={() =>
+                    selectCreatedToken({
+                      id: selectedToken.id,
+                      type: 'palette-token-duplicated',
+                    })
+                  }
+                  onUpdate={(changes) =>
+                    onExecuteCommand({
+                      id: selectedToken.id,
+                      changes,
+                      type: 'palette-token-updated',
+                    })
+                  }
+                />
+              ) : (
+                <>
+                  <section className="inspector-section">
+                    <p className="workspace-eyebrow">Project</p>
+                    <dl>
+                      <div>
+                        <dt>Profile</dt>
+                        <dd>{project.hardwareProfile}</dd>
+                      </div>
+                      <div>
+                        <dt>Format</dt>
+                        <dd>Schema v{project.schemaVersion}</dd>
+                      </div>
+                      <div>
+                        <dt>Palette</dt>
+                        <dd>
+                          {colours.length}{' '}
+                          {colours.length === 1 ? 'colour' : 'colours'}
+                        </dd>
+                      </div>
+                    </dl>
+                  </section>
+                  <PanelPlaceholder
+                    title="Nothing selected"
+                    description="Select a palette colour to edit it."
+                  />
+                </>
+              )}
             </div>
           )}
         </aside>

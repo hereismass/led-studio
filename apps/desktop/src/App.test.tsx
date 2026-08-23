@@ -17,10 +17,19 @@ import type {
 } from './projectFiles';
 
 const loadedProject = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   name: 'Loaded Lighting Show',
   hardwareProfile: 'test-controller-v1',
-  palette: { blue: '#1248FF' },
+  palette: [
+    {
+      id: 'd2c6fe14-65a2-4d79-bf65-aa47e76733de',
+      name: 'Blue',
+      value: '#1248FF',
+    },
+  ],
+  scenes: [],
+  sequence: [],
+  groups: [],
 };
 
 function openedProjectFile() {
@@ -103,7 +112,7 @@ describe('App project launcher and lifecycle', () => {
     ).toBeInTheDocument();
   });
 
-  it('creates an unsaved project with an empty palette', async () => {
+  it('creates an unsaved project with a default white palette token', async () => {
     const user = userEvent.setup();
     renderApp();
 
@@ -114,7 +123,108 @@ describe('App project launcher and lifecycle', () => {
     ).toBeInTheDocument();
     expect(screen.getByText('Unsaved new project')).toBeInTheDocument();
     expect(screen.getByText('Unsaved')).toBeInTheDocument();
-    expect(screen.getByText('No palette colours yet')).toBeInTheDocument();
+    expect(
+      screen.getByRole('option', { name: /White.*#FFFFFF/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('edits the project name as one undoable command', async () => {
+    const user = userEvent.setup();
+    renderApp();
+
+    await user.click(screen.getByRole('button', { name: /new project/i }));
+    await user.click(screen.getByRole('button', { name: 'Edit project name' }));
+    const input = screen.getByRole('textbox', { name: 'Project name' });
+    await user.clear(input);
+    await user.type(input, 'Stage Show{Enter}');
+
+    expect(
+      screen.getByRole('heading', { name: 'Stage Show', level: 1 }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Undo' })).toBeEnabled();
+
+    fireEvent.keyDown(window, { key: 'z', metaKey: true });
+    expect(
+      screen.getByRole('heading', { name: 'Untitled Project', level: 1 }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Redo' })).toBeEnabled();
+  });
+
+  it('adds, edits, duplicates, deletes, and restores palette tokens', async () => {
+    const user = userEvent.setup();
+    renderApp();
+
+    await user.click(screen.getByRole('button', { name: /new project/i }));
+    await user.click(screen.getByRole('button', { name: 'Add colour' }));
+
+    expect(
+      await screen.findByRole('option', { name: /New Colour.*#FFFFFF/i }),
+    ).toHaveAttribute('aria-selected', 'true');
+    const nameInput = screen.getByRole('textbox', { name: 'Display name' });
+    await waitFor(() => expect(nameInput).toHaveFocus());
+    await user.clear(nameInput);
+    await user.type(nameInput, 'Ocean Blue{Enter}');
+
+    const hexInput = screen.getByRole('textbox', { name: 'Hex colour' });
+    await user.clear(hexInput);
+    await user.type(hexInput, '#12abef{Enter}');
+    expect(
+      screen.getByRole('option', { name: /Ocean Blue.*#12ABEF/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Stable ID')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Duplicate' }));
+    expect(
+      await screen.findByRole('option', { name: /Ocean Blue Copy.*#12ABEF/i }),
+    ).toHaveAttribute('aria-selected', 'true');
+
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(
+      screen.queryByRole('option', { name: /Ocean Blue Copy/i }),
+    ).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(
+      screen.getByRole('option', { name: /Ocean Blue Copy/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('keeps invalid palette drafts out of the project history', async () => {
+    const user = userEvent.setup();
+    renderApp();
+
+    await user.click(
+      screen.getByRole('button', { name: /KMS 4-String Bass Example/i }),
+    );
+    await user.click(screen.getByRole('option', { name: /Black.*#000000/i }));
+    const nameInput = screen.getByRole('textbox', { name: 'Display name' });
+    await user.clear(nameInput);
+    await user.type(nameInput, 'hot pink{Enter}');
+
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Colour names must be unique',
+    );
+    expect(
+      screen.getByRole('option', { name: /Black.*#000000/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Undo' })).toBeDisabled();
+  });
+
+  it('supports keyboard navigation through palette tokens', async () => {
+    const user = userEvent.setup();
+    renderApp();
+
+    await user.click(
+      screen.getByRole('button', { name: /KMS 4-String Bass Example/i }),
+    );
+    const hotPink = screen.getByRole('option', { name: /Hot Pink/i });
+    await user.click(hotPink);
+    await user.keyboard('{ArrowDown}');
+
+    const electricGreen = screen.getByRole('option', {
+      name: /Electric Green/i,
+    });
+    expect(electricGreen).toHaveAttribute('aria-selected', 'true');
+    await waitFor(() => expect(electricGreen).toHaveFocus());
   });
 
   it('opens a switchable editor workspace with collapsible panels', async () => {
@@ -422,7 +532,7 @@ describe('App project launcher and lifecycle', () => {
           handle: 'project-file-1',
         })
         .mockResolvedValueOnce({
-          contents: '{"schemaVersion":1}',
+          contents: '{"schemaVersion":2}',
           fileName: 'invalid.ledstudio',
           handle: 'project-file-2',
         }),

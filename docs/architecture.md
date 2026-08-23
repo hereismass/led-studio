@@ -6,11 +6,13 @@ LED Studio separates persisted project data, transient editor state, native appl
 
 `packages/project-format` owns the versioned project document, validation, parsing, and serialization. It has no dependency on React, Tauri, a particular instrument, or editor state. Hardware profiles remain separate definitions referenced by opaque IDs; profile geometry does not belong in the generic project schema.
 
-The desktop project-session controller owns the active document and revision history. Dirty state is derived by comparing the current and last-saved revisions. Native project paths stay in Rust and are represented in the webview by opaque handles.
+The desktop project-session controller owns the active document and immutable revision history. Every committed editor command creates a revision with a stable ID; undo and redo move between those revisions, while dirty state compares the current revision ID with the last-saved one. Saving captures a specific revision, so edits made while a save is running remain dirty. Native project paths stay in Rust and are represented in the webview by opaque handles.
 
 ## User interface
 
 React owns application layout, controls, inspectors, and low-frequency state presentation. Presentational components receive state and commands from the project-session controller; they do not perform filesystem or lifecycle work directly.
+
+Pure editor commands apply validated project mutations without depending on React or Tauri. Text fields keep temporary drafts locally and dispatch one command when an edit is committed, preventing keystrokes from flooding revision history.
 
 Workspace panel sizes and collapsed state are versioned local application preferences. They are deliberately separate from project data so opening a project does not change the user's editor layout.
 

@@ -23,7 +23,7 @@ describe('project storage adapter', () => {
 
   it('opens projects through the native command', async () => {
     const opened = {
-      contents: '{"schemaVersion":1}',
+      contents: '{"schemaVersion":2}',
       fileName: 'show.ledstudio',
       handle: 'project-file-1',
     };

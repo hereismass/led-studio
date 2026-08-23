@@ -1,17 +1,37 @@
 import { z } from 'zod';
 
-export const PROJECT_SCHEMA_VERSION = 1 as const;
+export const PROJECT_SCHEMA_VERSION = 2 as const;
 
-export const PaletteNameSchema = z
+export const PaletteTokenIdSchema = z
   .string()
   .regex(
-    /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/,
-    'Palette names must use lowercase kebab-case',
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    'Palette token IDs must be lowercase UUID v4 values',
   );
+
+export const PaletteTokenNameSchema = z
+  .string()
+  .trim()
+  .min(1, 'Palette token names cannot be empty');
 
 export const HexColourSchema = z
   .string()
-  .regex(/^#[0-9A-Fa-f]{6}$/, 'Palette colours must be six-digit hex values');
+  .regex(
+    /^#[0-9A-F]{6}$/,
+    'Palette colours must be uppercase six-digit hex values',
+  );
+
+export const PaletteTokenSchema = z
+  .object({
+    id: PaletteTokenIdSchema,
+    name: PaletteTokenNameSchema,
+    value: HexColourSchema,
+  })
+  .strict();
+
+const ReservedCollectionSchema = z
+  .array(z.never())
+  .max(0, 'This collection is reserved and must remain empty');
 
 export const ProjectSchema = z
   .object({
@@ -21,10 +41,39 @@ export const ProjectSchema = z
       .string()
       .trim()
       .min(1, 'Hardware profile cannot be empty'),
-    palette: z.record(PaletteNameSchema, HexColourSchema),
+    palette: z.array(PaletteTokenSchema),
+    scenes: ReservedCollectionSchema,
+    sequence: ReservedCollectionSchema,
+    groups: ReservedCollectionSchema,
   })
-  .strict();
+  .strict()
+  .superRefine((project, context) => {
+    const ids = new Set<string>();
+    const names = new Set<string>();
 
+    project.palette.forEach((token, index) => {
+      if (ids.has(token.id)) {
+        context.addIssue({
+          code: 'custom',
+          message: `Palette token ID "${token.id}" is already in use`,
+          path: ['palette', index, 'id'],
+        });
+      }
+      ids.add(token.id);
+
+      const normalizedName = token.name.toLowerCase();
+      if (names.has(normalizedName)) {
+        context.addIssue({
+          code: 'custom',
+          message: `Palette token name "${token.name}" is already in use`,
+          path: ['palette', index, 'name'],
+        });
+      }
+      names.add(normalizedName);
+    });
+  });
+
+export type PaletteToken = z.infer<typeof PaletteTokenSchema>;
 export type Project = z.infer<typeof ProjectSchema>;
 
 export type ProjectFormatErrorKind = 'invalid-json' | 'invalid-project';
@@ -56,7 +105,40 @@ export interface CreateProjectInput {
   hardwareProfile: string;
 }
 
+export function generatePaletteTokenId(): string {
+  return globalThis.crypto.randomUUID();
+}
+
+function unsupportedVersionIssue(
+  input: unknown,
+): ProjectValidationIssue | null {
+  if (
+    typeof input !== 'object' ||
+    input === null ||
+    !('schemaVersion' in input)
+  ) {
+    return null;
+  }
+
+  const version = input.schemaVersion;
+  if (version === PROJECT_SCHEMA_VERSION) {
+    return null;
+  }
+
+  return {
+    message: `Project format version ${String(version)} is not supported; this build supports version ${PROJECT_SCHEMA_VERSION}`,
+    path: ['schemaVersion'],
+  };
+}
+
 export function parseProject(input: unknown): Project {
+  const versionIssue = unsupportedVersionIssue(input);
+  if (versionIssue) {
+    throw new ProjectFormatError('invalid-project', versionIssue.message, [
+      versionIssue,
+    ]);
+  }
+
   const result = ProjectSchema.safeParse(input);
 
   if (!result.success) {
@@ -105,6 +187,15 @@ export function createProject({
     schemaVersion: PROJECT_SCHEMA_VERSION,
     name,
     hardwareProfile,
-    palette: {},
+    palette: [
+      {
+        id: generatePaletteTokenId(),
+        name: 'White',
+        value: '#FFFFFF',
+      },
+    ],
+    scenes: [],
+    sequence: [],
+    groups: [],
   });
 }

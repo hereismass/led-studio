@@ -1,10 +1,25 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "name": "KMS 4-String Bass Example",
   "hardwareProfile": "kms-4-string-31-inlay-v1",
-  "palette": {
-    "hot-pink": "#FF2B9A",
-    "electric-green": "#45FF72",
-    "black": "#000000"
-  }
+  "palette": [
+    {
+      "id": "8b2c3d4e-5f60-4a71-8b92-c3d4e5f60718",
+      "name": "Hot Pink",
+      "value": "#FF2B9A"
+    },
+    {
+      "id": "1a2b3c4d-5e6f-4789-8abc-def012345678",
+      "name": "Electric Green",
+      "value": "#45FF72"
+    },
+    {
+      "id": "f0e1d2c3-b4a5-4678-9abc-def012345678",
+      "name": "Black",
+      "value": "#000000"
+    }
+  ],
+  "scenes": [],
+  "sequence": [],
+  "groups": []
 }

@@ -24,14 +24,16 @@ The first milestone changes only the workspace layout. The project format change
 
 ### 2. Project and palette editing
 
+Implementation complete; the UI review gate is open for feedback.
+
 - Make the project name editable and surface saved/modified state compactly.
 - Establish centralized editor commands and undo/redo before adding more mutations.
 - Replace the palette record with ordered linked tokens:
-  - stable lowercase kebab-case ID;
+  - hidden, stable UUID v4 ID;
   - editable display name;
   - six-digit uppercase hexadecimal value.
-- Generate readable IDs from new token names, adding numeric suffixes for collisions; subsequent renames do not change IDs.
-- Add palette create, edit, duplicate, reorder, and delete operations through the left panel and inspector.
+- Generate opaque IDs when tokens are created or duplicated; subsequent renames do not change IDs.
+- Add palette create, edit, duplicate, and delete operations through the left panel and inspector. Palette reordering is deliberately deferred until ordering has an editor-visible purpose.
 - Introduce project format v2 with empty collections reserved for scenes, sequence items, and groups. Reject v1 files without migration and update all examples.
 - Review gate: token editing, inspector behavior, compactness, and undo/redo expectations.
 

@@ -8,6 +8,7 @@ import {
 } from '@led-studio/project-format';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AppLifecycleGateway } from './appLifecycle';
+import { applyEditorCommand, type EditorCommand } from './editorCommands';
 import { projectExamples } from './examples';
 import type {
   ProjectFileReference,
@@ -25,9 +26,16 @@ export type ProjectSource =
   | { kind: 'file'; file: ProjectFileReference }
   | { kind: 'new' };
 
-export interface ActiveProjectSession {
-  currentRevision: number;
+export interface ProjectRevision {
   project: Project;
+  revision: number;
+}
+
+export interface ActiveProjectSession {
+  future: ProjectRevision[];
+  nextRevision: number;
+  past: ProjectRevision[];
+  present: ProjectRevision;
   savedRevision: number | null;
   source: ProjectSource;
 }
@@ -48,13 +56,15 @@ export type ProjectSessionAction =
   | { operation: Exclude<ProjectOperation, 'idle'>; type: 'operation-started' }
   | { type: 'operation-stopped' }
   | { activeProject: ActiveProjectSession; type: 'project-activated' }
-  | { project: Project; type: 'project-replaced' }
+  | { command: EditorCommand; type: 'editor-command-executed' }
+  | { type: 'redo-requested' }
   | { feedback: SaveFeedback; type: 'save-failed' }
   | {
       file: ProjectFileReference;
       revision: number;
       type: 'save-succeeded';
-    };
+    }
+  | { type: 'undo-requested' };
 
 export const initialProjectSessionState: ProjectSessionState = {
   activeProject: null,
@@ -66,8 +76,23 @@ export const initialProjectSessionState: ProjectSessionState = {
 export function isProjectDirty(project: ActiveProjectSession): boolean {
   return (
     project.savedRevision === null ||
-    project.currentRevision !== project.savedRevision
+    project.present.revision !== project.savedRevision
   );
+}
+
+export function createActiveProjectSession(
+  project: Project,
+  source: ProjectSource,
+  savedRevision: number | null,
+): ActiveProjectSession {
+  return {
+    future: [],
+    nextRevision: 1,
+    past: [],
+    present: { project: parseProject(project), revision: 0 },
+    savedRevision,
+    source,
+  };
 }
 
 export function projectSessionReducer(
@@ -99,8 +124,16 @@ export function projectSessionReducer(
         operation: 'idle',
         saveFeedback: null,
       };
-    case 'project-replaced':
+    case 'editor-command-executed': {
       if (!state.activeProject) {
+        return state;
+      }
+
+      const project = applyEditorCommand(
+        state.activeProject.present.project,
+        action.command,
+      );
+      if (project === state.activeProject.present.project) {
         return state;
       }
 
@@ -108,11 +141,49 @@ export function projectSessionReducer(
         ...state,
         activeProject: {
           ...state.activeProject,
-          currentRevision: state.activeProject.currentRevision + 1,
-          project: parseProject(action.project),
+          future: [],
+          nextRevision: state.activeProject.nextRevision + 1,
+          past: [...state.activeProject.past, state.activeProject.present],
+          present: {
+            project,
+            revision: state.activeProject.nextRevision,
+          },
         },
         saveFeedback: null,
       };
+    }
+    case 'undo-requested': {
+      const activeProject = state.activeProject;
+      if (!activeProject || activeProject.past.length === 0) return state;
+
+      const present = activeProject.past.at(-1)!;
+      return {
+        ...state,
+        activeProject: {
+          ...activeProject,
+          future: [activeProject.present, ...activeProject.future],
+          past: activeProject.past.slice(0, -1),
+          present,
+        },
+        saveFeedback: null,
+      };
+    }
+    case 'redo-requested': {
+      const activeProject = state.activeProject;
+      if (!activeProject || activeProject.future.length === 0) return state;
+
+      const [present, ...future] = activeProject.future;
+      return {
+        ...state,
+        activeProject: {
+          ...activeProject,
+          future,
+          past: [...activeProject.past, activeProject.present],
+          present,
+        },
+        saveFeedback: null,
+      };
+    }
     case 'save-failed':
       return {
         ...state,
@@ -201,14 +272,14 @@ export function useProjectSession({
       }
 
       try {
-        const contents = serializeProject(snapshot.project);
+        const contents = serializeProject(snapshot.present.project);
         const currentFile =
           snapshot.source.kind === 'file' ? snapshot.source.file : null;
         let savedFile: ProjectFileReference;
 
         if (forceSaveAs || currentFile === null) {
           const selectedFile = await projectStorage.saveProjectAs(
-            snapshot.project.name,
+            snapshot.present.project.name,
             contents,
           );
 
@@ -225,7 +296,7 @@ export function useProjectSession({
 
         dispatch({
           file: savedFile,
-          revision: snapshot.currentRevision,
+          revision: snapshot.present.revision,
           type: 'save-succeeded',
         });
         return true;
@@ -308,7 +379,7 @@ export function useProjectSession({
 
       try {
         decision = await unsavedChanges.confirmUnsavedChanges(
-          activeProject.project.name,
+          activeProject.present.project.name,
           intent,
         );
       } catch (error) {
@@ -354,15 +425,14 @@ export function useProjectSession({
     }
 
     dispatch({
-      activeProject: {
-        currentRevision: 0,
-        project: createProject({
+      activeProject: createActiveProjectSession(
+        createProject({
           hardwareProfile: DEFAULT_HARDWARE_PROFILE,
           name: 'Untitled Project',
         }),
-        savedRevision: null,
-        source: { kind: 'new' },
-      },
+        { kind: 'new' },
+        null,
+      ),
       type: 'project-activated',
     });
   }, [dispatch]);
@@ -380,12 +450,11 @@ export function useProjectSession({
       }
 
       dispatch({
-        activeProject: {
-          currentRevision: 0,
-          project: parseProject(example.project),
-          savedRevision: null,
-          source: { kind: 'example' },
-        },
+        activeProject: createActiveProjectSession(
+          example.project,
+          { kind: 'example' },
+          null,
+        ),
         type: 'project-activated',
       });
     },
@@ -417,18 +486,17 @@ export function useProjectSession({
 
     try {
       dispatch({
-        activeProject: {
-          currentRevision: 0,
-          project: parseProjectJson(selectedFile.contents),
-          savedRevision: 0,
-          source: {
+        activeProject: createActiveProjectSession(
+          parseProjectJson(selectedFile.contents),
+          {
             file: {
               fileName: selectedFile.fileName,
               handle: selectedFile.handle,
             },
             kind: 'file',
           },
-        },
+          0,
+        ),
         type: 'project-activated',
       });
     } catch (error) {
@@ -436,12 +504,21 @@ export function useProjectSession({
     }
   }, [beginOperation, dispatch, projectStorage]);
 
-  const replaceProject = useCallback(
-    (project: Project) => {
+  const executeCommand = useCallback(
+    (command: EditorCommand) => {
       if (stateRef.current.activeProject) {
-        dispatch({ project, type: 'project-replaced' });
+        dispatch({ command, type: 'editor-command-executed' });
       }
     },
+    [dispatch],
+  );
+
+  const undo = useCallback(
+    () => dispatch({ type: 'undo-requested' }),
+    [dispatch],
+  );
+  const redo = useCallback(
+    () => dispatch({ type: 'redo-requested' }),
     [dispatch],
   );
 
@@ -472,11 +549,13 @@ export function useProjectSession({
 
   return {
     createNewProject,
+    executeCommand,
     loadExample,
     openExistingProject,
-    replaceProject,
+    redo,
     requestChooseAnother: () => requestLeave('choose-another'),
     save,
     state,
+    undo,
   };
 }

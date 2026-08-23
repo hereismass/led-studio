@@ -42,7 +42,7 @@ export function ProjectLauncher({
           <span>
             <strong>New project</strong>
             <small>
-              Start with the KMS 31-inlay profile and an empty palette.
+              Start with the KMS 31-inlay profile and a white palette colour.
             </small>
           </span>
           <span className="launcher-card-arrow" aria-hidden="true">
@@ -95,10 +95,10 @@ export function ProjectLauncher({
               onClick={() => onLoadExample(index)}
             >
               <span className="example-palette" aria-hidden="true">
-                {Object.values(example.project.palette).map((colour, index) => (
+                {example.project.palette.map((token) => (
                   <span
-                    key={`${colour}-${index}`}
-                    style={{ backgroundColor: colour }}
+                    key={token.id}
+                    style={{ backgroundColor: token.value }}
                   />
                 ))}
               </span>
