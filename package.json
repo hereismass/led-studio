@@ -8,15 +8,15 @@
     "pnpm": ">=11"
   },
   "scripts": {
-    "dev": "pnpm --filter @led-studio/desktop tauri dev",
-    "build": "pnpm --filter @led-studio/desktop tauri build",
+    "dev": "PATH=\"$HOME/.cargo/bin:$PATH\" pnpm --filter @led-studio/desktop tauri dev",
+    "build": "PATH=\"$HOME/.cargo/bin:$PATH\" pnpm --filter @led-studio/desktop tauri build",
     "build:web": "pnpm --filter @led-studio/desktop build",
     "test": "pnpm --recursive --if-present test",
-    "test:rust": "cargo test --locked --manifest-path apps/desktop/src-tauri/Cargo.toml",
+    "test:rust": "PATH=\"$HOME/.cargo/bin:$PATH\" cargo test --locked --manifest-path apps/desktop/src-tauri/Cargo.toml",
     "typecheck": "pnpm --recursive --if-present typecheck",
-    "check:rust": "cargo check --locked --manifest-path apps/desktop/src-tauri/Cargo.toml",
-    "format": "prettier --write . && cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml",
-    "format:check": "prettier --check . && cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml -- --check",
+    "check:rust": "PATH=\"$HOME/.cargo/bin:$PATH\" cargo check --locked --manifest-path apps/desktop/src-tauri/Cargo.toml",
+    "format": "prettier --write . && PATH=\"$HOME/.cargo/bin:$PATH\" cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml",
+    "format:check": "prettier --check . && PATH=\"$HOME/.cargo/bin:$PATH\" cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml -- --check",
     "check": "pnpm format:check && pnpm typecheck && pnpm test && pnpm test:rust && pnpm build:web && pnpm check:rust"
   },
   "devDependencies": {

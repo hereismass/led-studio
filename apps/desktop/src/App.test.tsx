@@ -19,7 +19,7 @@ import type {
 const loadedProject = {
   schemaVersion: 2,
   name: 'Loaded Lighting Show',
-  hardwareProfile: 'test-controller-v1',
+  hardwareProfile: 'kms-4-string-31-inlay-v1',
   palette: [
     {
       id: 'd2c6fe14-65a2-4d79-bf65-aa47e76733de',
@@ -227,6 +227,97 @@ describe('App project launcher and lifecycle', () => {
     await waitFor(() => expect(electricGreen).toHaveFocus());
   });
 
+  it('creates and duplicates looping scenes with timeline feedback', async () => {
+    const user = userEvent.setup();
+    renderApp();
+
+    await user.click(screen.getByRole('button', { name: /new project/i }));
+    await user.click(screen.getByRole('button', { name: 'Add scene' }));
+
+    expect(
+      await screen.findByRole('option', { name: /Scene 1.*4 beats/i }),
+    ).toHaveAttribute('aria-selected', 'true');
+    expect(
+      screen.getByRole('tabpanel', { name: 'Scene timeline' }),
+    ).toHaveTextContent('Loop · 4 beats · 1 bar · 120 BPM · 4/4');
+
+    await user.click(screen.getByRole('button', { name: 'Duplicate' }));
+    expect(
+      await screen.findByRole('option', { name: /Scene 1 Copy.*4 beats/i }),
+    ).toHaveAttribute('aria-selected', 'true');
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(
+      screen.queryByRole('option', { name: /Scene 1 Copy/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('selects profile groups and paints inlays from the inspector', async () => {
+    const user = userEvent.setup();
+    renderApp();
+
+    await user.click(
+      screen.getByRole('button', { name: /KMS 4-String Bass Example/i }),
+    );
+    await user.click(screen.getByRole('button', { name: /All Inlays.*31/i }));
+    expect(
+      screen.getByRole('heading', { name: '31 inlays selected' }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Apply Hot Pink' }));
+    expect(
+      screen.getByRole('button', {
+        name: /Fret 1 primary inlay, address 0, #FF2B9A at 100%/i,
+      }),
+    ).toBeInTheDocument();
+    await user.click(
+      screen.getByRole('button', { name: 'Turn selected inlays off' }),
+    );
+    expect(
+      screen.getByRole('button', {
+        name: /Fret 1 primary inlay, address 0, off/i,
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it('edits project-wide preview timing', async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await user.click(screen.getByRole('button', { name: /new project/i }));
+
+    const bpm = screen.getByRole('spinbutton', { name: 'Preview BPM' });
+    const numerator = screen.getByRole('spinbutton', {
+      name: 'Time signature numerator',
+    });
+
+    await user.clear(bpm);
+    expect(bpm).toHaveValue(null);
+    expect(screen.getByRole('button', { name: 'Undo' })).toBeDisabled();
+    await user.type(bpm, '96{Enter}');
+    expect(screen.getByRole('button', { name: 'Undo' })).toBeEnabled();
+
+    await user.clear(numerator);
+    await user.type(numerator, '6');
+    fireEvent.blur(numerator);
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: 'Time signature denominator' }),
+      '8',
+    );
+
+    expect(screen.getByRole('spinbutton', { name: 'Preview BPM' })).toHaveValue(
+      96,
+    );
+    expect(screen.getByText('96 BPM · 6/8')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(
+      screen.getByRole('combobox', { name: 'Time signature denominator' }),
+    ).toHaveValue('4');
+    await user.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(numerator).toHaveValue(4);
+    await user.click(screen.getByRole('button', { name: 'Redo' }));
+    expect(numerator).toHaveValue(6);
+  });
+
   it('opens a switchable editor workspace with collapsible panels', async () => {
     const user = userEvent.setup();
     renderApp();
@@ -253,7 +344,7 @@ describe('App project launcher and lifecycle', () => {
     await user.click(screen.getByRole('tab', { name: 'Scene timeline' }));
     expect(
       screen.getByRole('tabpanel', { name: 'Scene timeline' }),
-    ).toHaveTextContent('Select a scene to edit its animation');
+    ).toHaveTextContent('Select a scene to view its loop');
 
     await user.click(
       screen.getByRole('button', { name: 'Collapse assets panel' }),
@@ -324,7 +415,17 @@ describe('App project launcher and lifecycle', () => {
 
     expect(projectStorage.saveProject).toHaveBeenCalledWith(
       { fileName: 'loaded-project.ledstudio', handle: 'project-file-1' },
-      `${JSON.stringify(loadedProject, null, 2)}\n`,
+      `${JSON.stringify(
+        {
+          ...loadedProject,
+          timing: {
+            previewBpm: 120,
+            timeSignature: { denominator: 4, numerator: 4 },
+          },
+        },
+        null,
+        2,
+      )}\n`,
     );
     expect(
       await screen.findByText('Saved loaded-project.ledstudio.'),

@@ -10,6 +10,7 @@ This repository is a pnpm workspace so it can also contain controller firmware a
 
 - `apps/desktop` — Tauri v2, React, and TypeScript desktop application
 - `packages/project-format` — UI-independent project validation and TypeScript types
+- `packages/hardware-profiles` — UI-independent hardware geometry, addressing, groups, and compatibility validation
 - `examples` — example LED Studio project files
 
 ## Prerequisites
@@ -19,7 +20,7 @@ This repository is a pnpm workspace so it can also contain controller firmware a
 - Rust 1.88 or newer and Cargo (the repository includes a rustup toolchain file)
 - On macOS, Xcode Command Line Tools
 
-If another version manager such as mise intercepts `cargo`, configure it for Rust 1.88 or ensure rustup's Cargo directory precedes its shim directory.
+The root pnpm scripts place rustup's standard Cargo directory first on macOS, avoiding conflicts when another version manager such as mise also provides a `cargo` shim.
 
 ## Install and run
 
@@ -32,7 +33,9 @@ The second command starts the Vite development server and opens it in a Tauri wi
 
 On startup, choose to create an untitled project, open and validate a local project, or load a bundled example as an unsaved template. Save atomically replaces the current file, while Save As chooses a new `.ledstudio` destination. New and example-derived projects use Save As for their first save. The app also accepts `.json` files when opening. Closing the window or quitting prompts before discarding unsaved work.
 
-Inside a project, the name and linked palette colours are editable. New projects start with a white palette token. Palette tokens have hidden, stable UUIDs so future scenes can reference them safely without exposing implementation identifiers in the editor. Project edits support Undo and Redo from the toolbar or with <kbd>⌘Z</kbd> and <kbd>⌘⇧Z</kbd> on macOS.
+Inside a project, the name, preview BPM, time signature, linked palette colours, and reusable static scenes are editable. New projects start with a white palette token. Palette tokens and scenes have hidden, stable UUIDs. Scene inlays reference palette tokens, store integer brightness percentages, and remain off when no state is present. Project edits support Undo and Redo from the toolbar or with <kbd>⌘Z</kbd> and <kbd>⌘⇧Z</kbd> on macOS.
+
+The KMS profile renders an interactive, physically proportioned four-string fretboard with 31 inlays and built-in selection groups. Scenes loop indefinitely until a future MIDI message changes them; the current Scene Timeline is a static musical ruler and does not play yet.
 
 ## Tests and checks
 
@@ -59,12 +62,12 @@ pnpm build
 
 ## Project format
 
-Version 2 contains a schema version, required project name, opaque hardware-profile identifier, an ordered array of linked palette tokens, and empty collections reserved for scenes, sequence items, and groups. Each palette token has an opaque UUID v4 ID, a unique display name, and an uppercase six-digit hexadecimal value. Project names and hardware-profile identifiers must be non-empty. Version 1 files are intentionally unsupported during development and are not migrated.
+Version 2 contains a schema version, required project name, opaque hardware-profile identifier, project-wide preview timing, an ordered array of linked palette tokens, reusable static scenes, and empty collections reserved for sequence items and user groups. Each palette token has an opaque UUID v4 ID, a unique display name, and an uppercase six-digit hexadecimal value. Scenes have unique UUIDs and names, a loop length in quarter-beat steps, and sparse per-LED palette and brightness assignments. Earlier v2 documents without timing load with a 120 BPM, 4/4 default. Version 1 files remain intentionally unsupported.
 
-A hardware profile will eventually describe LED numbering and physical layout separately; the current project format does not embed bass-specific geometry.
+Hardware profiles describe LED numbering and physical layout separately; the project format does not embed instrument-specific geometry.
 
 Project files are JSON documents validated at runtime with Zod and use the `.ledstudio` extension. See [`examples/kms-4-string-31-inlay-v1.ledstudio`](examples/kms-4-string-31-inlay-v1.ledstudio).
 
 ## Deliberately out of scope
 
-There is currently no palette reordering, autosave, recovery backup, native File menu, scene editor, functional timeline, playback engine, animation system, song model, tempo model, MIDI or Ableton integration, Bluetooth, USB communication, OLED or footswitch support, firmware, device-package export, external backend, cloud service, account system, database, or external API.
+There is currently no palette or scene reordering, autosave, recovery backup, native File menu, playback engine, animation/layer system, automatic sequence, song model, MIDI or Ableton integration, Bluetooth, USB communication, OLED or footswitch support, firmware, device-package export, external backend, cloud service, account system, database, or external API.

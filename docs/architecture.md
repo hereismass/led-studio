@@ -4,13 +4,13 @@ LED Studio separates persisted project data, transient editor state, native appl
 
 ## Project data
 
-`packages/project-format` owns the versioned project document, validation, parsing, and serialization. It has no dependency on React, Tauri, a particular instrument, or editor state. Hardware profiles remain separate definitions referenced by opaque IDs; profile geometry does not belong in the generic project schema.
+`packages/project-format` owns the versioned project document, validation, parsing, and serialization. It has no dependency on React, Tauri, a particular instrument, or editor state. `packages/hardware-profiles` owns validated profile geometry, physical addresses, stable LED IDs, and built-in selection groups. Projects reference profiles by opaque ID and are cross-validated against the registry when activated.
 
 The desktop project-session controller owns the active document and immutable revision history. Every committed editor command creates a revision with a stable ID; undo and redo move between those revisions, while dirty state compares the current revision ID with the last-saved one. Saving captures a specific revision, so edits made while a save is running remain dirty. Native project paths stay in Rust and are represented in the webview by opaque handles.
 
 ## User interface
 
-React owns application layout, controls, inspectors, and low-frequency state presentation. Presentational components receive state and commands from the project-session controller; they do not perform filesystem or lifecycle work directly.
+React owns application layout, controls, inspectors, and low-frequency state presentation. Presentational components receive state and commands from the project-session controller; they do not perform filesystem or lifecycle work directly. Active scene, selected LEDs, inspector target, and panel dimensions are transient UI state and never enter project files.
 
 Pure editor commands apply validated project mutations without depending on React or Tauri. Text fields keep temporary drafts locally and dispatch one command when an edit is committed, preventing keystrokes from flooding revision history.
 
@@ -20,9 +20,9 @@ No additional global state library is needed while a reducer and controller hook
 
 ## Future playback and rendering
 
-Playback will be a deterministic engine separate from both the project document and React. It will evaluate project data against an explicit clock and produce LED frames without updating React state on every frame.
+Playback will be a deterministic engine separate from both the project document and React. It will evaluate scene data at an explicit musical position and produce LED frames without updating React state on every frame. Persisted preview tempo is an editing default; a future external MIDI tempo override will remain transient runtime state.
 
-Timeline and LED animation rendering should use Canvas or WebGL when those features are introduced. Work should move to a Web Worker only when profiling shows that evaluation or serialization blocks the UI; it is not required by the current project format.
+The 31-element hardware surface remains SVG because it benefits from native accessibility and direct interaction. Dense animation timelines may use Canvas or WebGL when introduced. Work should move to a Web Worker only when profiling shows that evaluation or serialization blocks the UI.
 
 ## Native boundary
 

@@ -10,7 +10,7 @@ import {
 } from './projectSession';
 
 const project = createProject({
-  hardwareProfile: 'test-profile',
+  hardwareProfile: 'kms-4-string-31-inlay-v1',
   name: 'Test project',
 });
 
@@ -136,7 +136,10 @@ describe('project session reducer', () => {
   it('replaces all history when another project is activated', () => {
     const edited = rename(stateWith(activeProject()), 'Edited project');
     const replacement = createActiveProjectSession(
-      createProject({ name: 'Replacement', hardwareProfile: 'other-profile' }),
+      createProject({
+        name: 'Replacement',
+        hardwareProfile: 'kms-4-string-31-inlay-v1',
+      }),
       { kind: 'new' },
       null,
     );

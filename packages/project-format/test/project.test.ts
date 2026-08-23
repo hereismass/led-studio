@@ -30,6 +30,10 @@ const validProject: Project = {
   scenes: [],
   sequence: [],
   groups: [],
+  timing: {
+    previewBpm: 120,
+    timeSignature: { denominator: 4, numerator: 4 },
+  },
 };
 
 describe('ProjectSchema', () => {
@@ -125,7 +129,7 @@ describe('ProjectSchema', () => {
     ).toBe(false);
   });
 
-  it.each(['scenes', 'sequence', 'groups'] as const)(
+  it.each(['sequence', 'groups'] as const)(
     'requires the reserved %s collection to remain empty',
     (collection) => {
       expect(
@@ -136,6 +140,100 @@ describe('ProjectSchema', () => {
       ).toBe(false);
     },
   );
+
+  it('accepts static scenes and validates their linked palette tokens', () => {
+    const scene = {
+      id: '6c21dc04-9a75-4f10-a7bb-9f17dc2fe32a',
+      ledStates: {
+        'fret-03-primary': {
+          brightnessPercent: 75,
+          paletteTokenId: HOT_PINK_ID,
+        },
+      },
+      loopLengthBeats: 4.25,
+      name: 'Marker Glow',
+    };
+    expect(parseProject({ ...validProject, scenes: [scene] }).scenes).toEqual([
+      scene,
+    ]);
+    expect(
+      ProjectSchema.safeParse({
+        ...validProject,
+        scenes: [
+          {
+            ...scene,
+            ledStates: {
+              x: { brightnessPercent: 100, paletteTokenId: BLACK_ID.slice(1) },
+            },
+          },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
+  it.each([0, -1, 1.1])('rejects invalid scene loop length %s', (value) => {
+    expect(
+      ProjectSchema.safeParse({
+        ...validProject,
+        scenes: [
+          {
+            id: '6c21dc04-9a75-4f10-a7bb-9f17dc2fe32a',
+            ledStates: {},
+            loopLengthBeats: value,
+            name: 'Scene',
+          },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects duplicate scene names ignoring case and whitespace', () => {
+    const scene = {
+      id: '6c21dc04-9a75-4f10-a7bb-9f17dc2fe32a',
+      ledStates: {},
+      loopLengthBeats: 4,
+      name: 'Scene',
+    };
+    expect(
+      ProjectSchema.safeParse({
+        ...validProject,
+        scenes: [
+          scene,
+          {
+            ...scene,
+            id: 'da5f1c78-56bd-438e-bfde-220bf24fdf29',
+            name: ' scene ',
+          },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
+  it('defaults timing for earlier version 2 documents', () => {
+    const { timing: _, ...withoutTiming } = validProject;
+    expect(parseProject(withoutTiming).timing).toEqual({
+      previewBpm: 120,
+      timeSignature: { denominator: 4, numerator: 4 },
+    });
+  });
+
+  it('validates tempo and time signatures', () => {
+    expect(
+      ProjectSchema.safeParse({
+        ...validProject,
+        timing: { ...validProject.timing, previewBpm: 19 },
+      }).success,
+    ).toBe(false);
+    expect(
+      ProjectSchema.safeParse({
+        ...validProject,
+        timing: {
+          previewBpm: 120,
+          timeSignature: { denominator: 3, numerator: 4 },
+        },
+      }).success,
+    ).toBe(false);
+  });
 
   it('rejects fields outside the version 2 format', () => {
     expect(
@@ -167,6 +265,10 @@ describe('project creation and JSON parsing', () => {
       scenes: [],
       sequence: [],
       groups: [],
+      timing: {
+        previewBpm: 120,
+        timeSignature: { denominator: 4, numerator: 4 },
+      },
     });
   });
 

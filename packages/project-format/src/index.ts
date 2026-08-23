@@ -2,12 +2,14 @@ import { z } from 'zod';
 
 export const PROJECT_SCHEMA_VERSION = 2 as const;
 
-export const PaletteTokenIdSchema = z
+export const ProjectEntityIdSchema = z
   .string()
   .regex(
     /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
-    'Palette token IDs must be lowercase UUID v4 values',
+    'Entity IDs must be lowercase UUID v4 values',
   );
+
+export const PaletteTokenIdSchema = ProjectEntityIdSchema;
 
 export const PaletteTokenNameSchema = z
   .string()
@@ -29,6 +31,52 @@ export const PaletteTokenSchema = z
   })
   .strict();
 
+export const TimeSignatureSchema = z
+  .object({
+    denominator: z.union([
+      z.literal(1),
+      z.literal(2),
+      z.literal(4),
+      z.literal(8),
+      z.literal(16),
+    ]),
+    numerator: z.number().int().min(1).max(32),
+  })
+  .strict();
+
+export const ProjectTimingSchema = z
+  .object({
+    previewBpm: z.number().int().min(20).max(300),
+    timeSignature: TimeSignatureSchema,
+  })
+  .strict();
+
+export const DEFAULT_PROJECT_TIMING = {
+  previewBpm: 120,
+  timeSignature: { denominator: 4, numerator: 4 },
+} as const;
+
+export const SceneLedStateSchema = z
+  .object({
+    brightnessPercent: z.number().int().min(1).max(100),
+    paletteTokenId: PaletteTokenIdSchema,
+  })
+  .strict();
+
+export const SceneSchema = z
+  .object({
+    id: ProjectEntityIdSchema,
+    ledStates: z.record(z.string().trim().min(1), SceneLedStateSchema),
+    loopLengthBeats: z
+      .number()
+      .positive()
+      .refine((value) => Number.isInteger(value * 4), {
+        message: 'Scene loop length must use quarter-beat increments',
+      }),
+    name: z.string().trim().min(1, 'Scene names cannot be empty'),
+  })
+  .strict();
+
 const ReservedCollectionSchema = z
   .array(z.never())
   .max(0, 'This collection is reserved and must remain empty');
@@ -42,9 +90,10 @@ export const ProjectSchema = z
       .trim()
       .min(1, 'Hardware profile cannot be empty'),
     palette: z.array(PaletteTokenSchema),
-    scenes: ReservedCollectionSchema,
+    scenes: z.array(SceneSchema),
     sequence: ReservedCollectionSchema,
     groups: ReservedCollectionSchema,
+    timing: ProjectTimingSchema.default(DEFAULT_PROJECT_TIMING),
   })
   .strict()
   .superRefine((project, context) => {
@@ -71,9 +120,51 @@ export const ProjectSchema = z
       }
       names.add(normalizedName);
     });
+
+    const sceneIds = new Set<string>();
+    const sceneNames = new Set<string>();
+    project.scenes.forEach((scene, sceneIndex) => {
+      if (sceneIds.has(scene.id)) {
+        context.addIssue({
+          code: 'custom',
+          message: `Scene ID "${scene.id}" is already in use`,
+          path: ['scenes', sceneIndex, 'id'],
+        });
+      }
+      sceneIds.add(scene.id);
+
+      const normalizedSceneName = scene.name.toLowerCase();
+      if (sceneNames.has(normalizedSceneName)) {
+        context.addIssue({
+          code: 'custom',
+          message: `Scene name "${scene.name}" is already in use`,
+          path: ['scenes', sceneIndex, 'name'],
+        });
+      }
+      sceneNames.add(normalizedSceneName);
+
+      Object.values(scene.ledStates).forEach((state, stateIndex) => {
+        if (!ids.has(state.paletteTokenId)) {
+          context.addIssue({
+            code: 'custom',
+            message: `Scene references unknown palette token "${state.paletteTokenId}"`,
+            path: [
+              'scenes',
+              sceneIndex,
+              'ledStates',
+              Object.keys(scene.ledStates)[stateIndex],
+              'paletteTokenId',
+            ],
+          });
+        }
+      });
+    });
   });
 
 export type PaletteToken = z.infer<typeof PaletteTokenSchema>;
+export type ProjectTiming = z.infer<typeof ProjectTimingSchema>;
+export type Scene = z.infer<typeof SceneSchema>;
+export type SceneLedState = z.infer<typeof SceneLedStateSchema>;
 export type Project = z.infer<typeof ProjectSchema>;
 
 export type ProjectFormatErrorKind = 'invalid-json' | 'invalid-project';
@@ -105,9 +196,11 @@ export interface CreateProjectInput {
   hardwareProfile: string;
 }
 
-export function generatePaletteTokenId(): string {
+export function generateProjectEntityId(): string {
   return globalThis.crypto.randomUUID();
 }
+
+export const generatePaletteTokenId = generateProjectEntityId;
 
 function unsupportedVersionIssue(
   input: unknown,
@@ -189,7 +282,7 @@ export function createProject({
     hardwareProfile,
     palette: [
       {
-        id: generatePaletteTokenId(),
+        id: generateProjectEntityId(),
         name: 'White',
         value: '#FFFFFF',
       },
@@ -197,5 +290,6 @@ export function createProject({
     scenes: [],
     sequence: [],
     groups: [],
+    timing: DEFAULT_PROJECT_TIMING,
   });
 }

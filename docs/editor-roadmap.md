@@ -39,35 +39,36 @@ Implementation complete; the UI review gate is open for feedback.
 
 ### 3. Hardware profile and static scene editor
 
+Implementation complete; the scene workflow and fretboard review gate are open for feedback.
+
 - Add an independent hardware-profile registry. Projects continue to store only the profile ID.
 - Define profile geometry using stable LED IDs, physical addresses, normalized coordinates, labels, and built-in groups.
 - Add the 31-inlay KMS profile and validate that its addresses are unique and complete.
 - Render the central hardware surface with SVG initially; 31 elements do not justify Canvas or WebGL yet.
 - Add reusable static scenes with:
   - stable ID and editable name;
-  - intrinsic duration in milliseconds;
+  - a musical loop length in quarter-beat steps;
   - per-LED palette-token reference and brightness;
   - absent LED state meaning off.
 - Support click, Shift-click, marquee, and profile-group selection. Applying a palette token affects the current selection.
-- Lock hardware-profile changes while any scenes exist; deleting all scenes unlocks it.
+- Add project-wide preview BPM and time signature, with a static musical loop ruler. External tempo overrides remain transient future runtime state.
+- Keep the single available profile read-only. When profile switching is introduced, projects containing scenes remain bound until those scenes are removed or migrated explicitly.
 - Review gate: fretboard representation, selection gestures, scene workflow, and inspector organization.
 
 ### 4. Show sequence
 
-- Add an ordered sequence whose items reference reusable scene definitions rather than copying them.
-- Provide add, duplicate, remove, and drag-to-reorder operations in the Show Sequence bottom panel.
-- Use each scene's intrinsic duration; the initial transition is a cut.
-- Double-clicking a sequence item opens that scene in the Scene Timeline mode.
-- Keep renames safe through stable IDs. When deleting a referenced scene, offer either cancellation or removal of all its sequence occurrences.
-- Show total duration, current selection, and validation errors for missing references.
-- Review gate: relationship between the scene library, sequence, bottom-panel modes, and navigation.
+- Revisit the sequence model as an ordered bank of reusable scenes intended for MIDI selection rather than automatic timed progression.
+- Decide MIDI mapping, ordering, deletion safeguards, and whether a separate show/song abstraction is needed before changing the reserved `sequence` collection.
+- Keep renames safe through stable scene IDs and open selected scenes in Scene Timeline mode.
+- Review gate: relationship between scene library order, MIDI triggering, bottom-panel modes, and navigation.
 
 ### 5. Playback and transitions
 
-- Create a pure, UI-independent evaluator that resolves project LED output at an integer millisecond timestamp.
-- Add play, pause, stop, scrub, loop, and current-time controls for both a scene and the complete sequence.
-- Drive visual refresh with `requestAnimationFrame` while keeping time evaluation outside React components.
-- Add cut and crossfade transitions. Crossfades overlap the end of the outgoing scene and beginning of the incoming scene; show duration subtracts these overlaps.
+- Create a pure, UI-independent evaluator that resolves scene LED output at an explicit musical position within its loop.
+- Add preview play, pause, stop, scrub, loop, and current-position controls for a scene.
+- Drive visual refresh with `requestAnimationFrame` and an isolated preview clock while keeping evaluation outside React components.
+- Define how an external MIDI clock overrides the persisted preview BPM without mutating the project.
+- Defer inter-scene transitions until the MIDI-driven scene-switch model is defined.
 - Display evaluator output on the same hardware surface used for editing.
 - Review gate: transport behavior, timeline feedback, transition semantics, and preview clarity.
 
@@ -75,7 +76,7 @@ Implementation complete; the UI review gate is open for feedback.
 
 - Extend scenes with ordered, targetable effect layers while retaining their static base state.
 - Start with Pulse and Chase effects to validate temporal and spatial behavior without creating a large effect library.
-- Give layers stable IDs, names, enabled/locked state, LED targets, start/end times, and typed parameters.
+- Give layers stable IDs, names, enabled/locked state, LED targets, musical start/end positions, and typed parameters.
 - Add layer rows and duration bars to the Scene Timeline, with editing in the contextual inspector.
 - Add user-defined LED groups now that reusable animation targeting needs them.
 - Keep evaluation deterministic and define compositing centrally rather than in individual UI components.
@@ -104,11 +105,11 @@ Implementation complete; the UI review gate is open for feedback.
 - React owns workspace presentation and user interaction; Tauri continues to own native dialogs and file persistence.
 - Local workspace preferences use a versioned app-preference key and never enter project files.
 - Format v2 introduces stable IDs and forward-shaped collections. Later milestones add compatible layer and transition variants rather than repeatedly replacing the base format.
-- All time values use integer milliseconds. Tempo, beats, MIDI, hardware communication, firmware, and export remain out of scope.
+- Scene time uses beat-relative positions. MIDI input, hardware communication, firmware, and export remain out of scope until their dedicated milestones.
 
 ## Test plan
 
-- Unit-test every schema, referential-integrity rule, editor command, undo/redo operation, profile definition, and playback timestamp boundary.
+- Unit-test every schema, referential-integrity rule, editor command, undo/redo operation, profile definition, and playback position boundary.
 - Add component tests for panel behavior, keyboard selection, palette editing, scene operations, sequence reordering, and timeline mode switching.
 - Round-trip representative v2 projects through save and load after every format-related milestone.
 - Verify malformed files, duplicate IDs, missing references, invalid LED addresses, and invalid transition durations are rejected clearly.

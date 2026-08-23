@@ -8,6 +8,7 @@ interface PaletteInspectorProps {
   onDelete: () => void;
   onDuplicate: () => void;
   onUpdate: (changes: Partial<Pick<PaletteToken, 'name' | 'value'>>) => void;
+  usageCount: number;
 }
 
 const HEX_COLOUR_PATTERN = /^#[0-9A-Fa-f]{6}$/;
@@ -19,6 +20,7 @@ export function PaletteInspector({
   onDelete,
   onDuplicate,
   onUpdate,
+  usageCount,
 }: PaletteInspectorProps) {
   const [nameDraft, setNameDraft] = useState(token.name);
   const [valueDraft, setValueDraft] = useState(token.value);
@@ -163,10 +165,26 @@ export function PaletteInspector({
         <button type="button" onClick={onDuplicate}>
           Duplicate
         </button>
-        <button className="inspector-delete" type="button" onClick={onDelete}>
+        <button
+          className="inspector-delete"
+          type="button"
+          disabled={usageCount > 0}
+          title={
+            usageCount > 0
+              ? 'Remove all scene references before deleting this colour'
+              : undefined
+          }
+          onClick={onDelete}
+        >
           Delete
         </button>
       </div>
+      {usageCount > 0 ? (
+        <p className="palette-usage-note">
+          Used by {usageCount} scene {usageCount === 1 ? 'LED' : 'LEDs'}. Turn
+          those inlays off or apply another colour before deleting.
+        </p>
+      ) : null}
     </section>
   );
 }

@@ -1,6 +1,10 @@
 import { createProject, type Project } from '@led-studio/project-format';
 import { describe, expect, it } from 'vitest';
-import { applyEditorCommand } from './editorCommands';
+import {
+  applyEditorCommand,
+  EditorCommandError,
+  paletteTokenUsageCount,
+} from './editorCommands';
 
 const HOT_PINK_ID = '8b2c3d4e-5f60-4a71-8b92-c3d4e5f60718';
 const BLACK_ID = 'f0e1d2c3-b4a5-4678-9abc-def012345678';
@@ -9,7 +13,10 @@ const UUID_V4_PATTERN =
 
 function projectWithPalette(): Project {
   return {
-    ...createProject({ name: 'Test Project', hardwareProfile: 'test-profile' }),
+    ...createProject({
+      name: 'Test Project',
+      hardwareProfile: 'kms-4-string-31-inlay-v1',
+    }),
     palette: [
       { id: HOT_PINK_ID, name: 'Hot Pink', value: '#FF2B9A' },
       { id: BLACK_ID, name: 'Black', value: '#000000' },
@@ -109,5 +116,119 @@ describe('editor commands', () => {
 
     expect(project.palette.map((token) => token.id)).toEqual([BLACK_ID]);
     expect(original.palette).toHaveLength(2);
+  });
+
+  it('creates, updates, duplicates, and deletes static scenes', () => {
+    let project = applyEditorCommand(projectWithPalette(), {
+      type: 'scene-added',
+    });
+    const sceneId = project.scenes[0].id;
+    expect(project.scenes[0]).toMatchObject({
+      ledStates: {},
+      loopLengthBeats: 4,
+      name: 'Scene 1',
+    });
+    expect(sceneId).toMatch(UUID_V4_PATTERN);
+
+    project = applyEditorCommand(project, {
+      changes: { loopLengthBeats: 3.25, name: 'Verse' },
+      id: sceneId,
+      type: 'scene-updated',
+    });
+    project = applyEditorCommand(project, {
+      id: sceneId,
+      type: 'scene-duplicated',
+    });
+    expect(project.scenes).toMatchObject([
+      { loopLengthBeats: 3.25, name: 'Verse' },
+      { loopLengthBeats: 3.25, name: 'Verse Copy' },
+    ]);
+    expect(project.scenes[1].id).not.toBe(sceneId);
+
+    project = applyEditorCommand(project, {
+      id: sceneId,
+      type: 'scene-deleted',
+    });
+    expect(project.scenes.map(({ name }) => name)).toEqual(['Verse Copy']);
+  });
+
+  it('paints selected LEDs, preserves brightness, and represents off by absence', () => {
+    let project = applyEditorCommand(projectWithPalette(), {
+      type: 'scene-added',
+    });
+    const sceneId = project.scenes[0].id;
+    project = applyEditorCommand(project, {
+      ledIds: ['fret-03-primary', 'fret-03-secondary'],
+      paletteTokenId: HOT_PINK_ID,
+      sceneId,
+      type: 'scene-leds-painted',
+    });
+    expect(project.scenes[0].ledStates['fret-03-primary']).toEqual({
+      brightnessPercent: 100,
+      paletteTokenId: HOT_PINK_ID,
+    });
+
+    project = applyEditorCommand(project, {
+      brightnessPercent: 40,
+      ledIds: ['fret-03-primary'],
+      sceneId,
+      type: 'scene-led-brightness-set',
+    });
+    project = applyEditorCommand(project, {
+      ledIds: ['fret-03-primary'],
+      paletteTokenId: BLACK_ID,
+      sceneId,
+      type: 'scene-leds-painted',
+    });
+    expect(project.scenes[0].ledStates['fret-03-primary']).toEqual({
+      brightnessPercent: 40,
+      paletteTokenId: BLACK_ID,
+    });
+
+    project = applyEditorCommand(project, {
+      ledIds: ['fret-03-primary'],
+      sceneId,
+      type: 'scene-leds-turned-off',
+    });
+    expect(project.scenes[0].ledStates['fret-03-primary']).toBeUndefined();
+  });
+
+  it('blocks deletion of palette tokens referenced by scenes', () => {
+    let project = applyEditorCommand(projectWithPalette(), {
+      type: 'scene-added',
+    });
+    project = applyEditorCommand(project, {
+      ledIds: ['fret-12-primary', 'fret-12-secondary'],
+      paletteTokenId: HOT_PINK_ID,
+      sceneId: project.scenes[0].id,
+      type: 'scene-leds-painted',
+    });
+
+    expect(paletteTokenUsageCount(project, HOT_PINK_ID)).toBe(2);
+    expect(() =>
+      applyEditorCommand(project, {
+        id: HOT_PINK_ID,
+        type: 'palette-token-deleted',
+      }),
+    ).toThrow(
+      expect.objectContaining<Partial<EditorCommandError>>({
+        code: 'palette-token-in-use',
+        referenceCount: 2,
+      }),
+    );
+  });
+
+  it('updates project preview timing', () => {
+    const project = applyEditorCommand(projectWithPalette(), {
+      changes: {
+        previewBpm: 96,
+        timeSignature: { denominator: 8, numerator: 6 },
+      },
+      type: 'project-timing-updated',
+    });
+    expect(project.timing).toEqual({
+      previewBpm: 96,
+      timeSignature: { denominator: 8, numerator: 6 },
+    });
   });
 });

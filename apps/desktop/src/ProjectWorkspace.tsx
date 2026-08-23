@@ -1,3 +1,5 @@
+import { getHardwareProfile } from '@led-studio/hardware-profiles';
+import type { Scene } from '@led-studio/project-format';
 import {
   useEffect,
   useRef,
@@ -5,9 +7,14 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
-import type { EditorCommand } from './editorCommands';
+import { paletteTokenUsageCount, type EditorCommand } from './editorCommands';
+import { FretboardEditor } from './FretboardEditor';
+import { LedSelectionInspector } from './LedSelectionInspector';
 import { PaletteInspector } from './PaletteInspector';
 import { ProjectTitleEditor } from './ProjectTitleEditor';
+import { SceneInspector } from './SceneInspector';
+import { SceneTimeline } from './SceneTimeline';
+import { TimingControls } from './TimingControls';
 import {
   isProjectDirty,
   type ActiveProjectSession,
@@ -19,21 +26,15 @@ import {
   loadWorkspaceLayout,
   resizeWorkspacePanel,
   saveWorkspaceLayout,
-  type WorkspaceLayoutPreferences,
 } from './workspaceLayout';
-
-function sourceDescription(activeProject: ActiveProjectSession): string {
-  if (activeProject.source.kind === 'file') {
-    return `Local file · ${activeProject.source.file.fileName}`;
-  }
-
-  return activeProject.source.kind === 'example'
-    ? 'Unsaved project · Based on bundled example'
-    : 'Unsaved new project';
-}
 
 type BottomPanel = 'scene' | 'show';
 type ResizablePanel = 'bottom' | 'left' | 'right';
+type InspectorTarget =
+  | { kind: 'leds' }
+  | { id: string; kind: 'palette' }
+  | { kind: 'project' }
+  | { id: string; kind: 'scene' };
 
 interface ProjectWorkspaceProps {
   activeProject: ActiveProjectSession;
@@ -66,6 +67,14 @@ function PanelPlaceholder({ description, title }: PanelPlaceholderProps) {
   );
 }
 
+function sourceDescription(activeProject: ActiveProjectSession): string {
+  if (activeProject.source.kind === 'file')
+    return `Local file · ${activeProject.source.file.fileName}`;
+  return activeProject.source.kind === 'example'
+    ? 'Unsaved project · Based on bundled example'
+    : 'Unsaved new project';
+}
+
 export function ProjectWorkspace({
   activeProject,
   canRedo,
@@ -80,55 +89,123 @@ export function ProjectWorkspace({
   saveFeedback,
 }: ProjectWorkspaceProps) {
   const { project } = activeProject.present;
+  const profile = getHardwareProfile(project.hardwareProfile)!;
   const colours = project.palette;
+  const scenes = project.scenes;
   const isBusy = operation !== 'idle';
-  const [bottomPanel, setBottomPanel] = useState<BottomPanel>('show');
-  const [layout, setLayout] = useState(loadWorkspaceLayout);
-  const [selectedTokenId, setSelectedTokenId] = useState<string | null>(null);
+  const initialSceneId = scenes[0]?.id ?? null;
+  const [activeSceneId, setActiveSceneId] = useState<string | null>(
+    initialSceneId,
+  );
+  const [bottomPanel, setBottomPanel] = useState<BottomPanel>(
+    initialSceneId ? 'scene' : 'show',
+  );
   const [focusTokenId, setFocusTokenId] = useState<string | null>(null);
-  const pendingNewTokenIdsRef = useRef<Set<string> | null>(null);
+  const [inspectorTarget, setInspectorTarget] = useState<InspectorTarget>(
+    initialSceneId
+      ? { id: initialSceneId, kind: 'scene' }
+      : { kind: 'project' },
+  );
+  const [layout, setLayout] = useState(loadWorkspaceLayout);
+  const [selectedLedIds, setSelectedLedIds] = useState<string[]>([]);
+  const pendingEntityIdsRef = useRef<{
+    ids: Set<string>;
+    kind: 'palette' | 'scene';
+  } | null>(null);
   const stopResizeRef = useRef<(() => void) | null>(null);
+
+  const activeScene =
+    scenes.find((scene) => scene.id === activeSceneId) ?? null;
   const selectedToken =
-    colours.find((token) => token.id === selectedTokenId) ?? null;
+    inspectorTarget.kind === 'palette'
+      ? (colours.find((token) => token.id === inspectorTarget.id) ?? null)
+      : null;
+  const selectedScene =
+    inspectorTarget.kind === 'scene'
+      ? (scenes.find((scene) => scene.id === inspectorTarget.id) ?? null)
+      : null;
+  const selectedLeds = profile.leds.filter((led) =>
+    selectedLedIds.includes(led.id),
+  );
 
   useEffect(() => saveWorkspaceLayout(layout), [layout]);
   useEffect(() => () => stopResizeRef.current?.(), []);
   useEffect(() => {
-    const previousIds = pendingNewTokenIdsRef.current;
-    if (previousIds) {
-      const addedToken = colours.find((token) => !previousIds.has(token.id));
-      pendingNewTokenIdsRef.current = null;
-      if (addedToken) {
-        setSelectedTokenId(addedToken.id);
-        setFocusTokenId(addedToken.id);
+    const pending = pendingEntityIdsRef.current;
+    if (pending) {
+      const collection = pending.kind === 'palette' ? colours : scenes;
+      const added = collection.find((entity) => !pending.ids.has(entity.id));
+      pendingEntityIdsRef.current = null;
+      if (added) {
+        if (pending.kind === 'palette') {
+          setInspectorTarget({ id: added.id, kind: 'palette' });
+          setFocusTokenId(added.id);
+        } else {
+          setActiveSceneId(added.id);
+          setInspectorTarget({ id: added.id, kind: 'scene' });
+          setSelectedLedIds([]);
+          setBottomPanel('scene');
+        }
         return;
       }
     }
 
-    if (
-      selectedTokenId !== null &&
-      !colours.some((token) => token.id === selectedTokenId)
-    ) {
-      setSelectedTokenId(null);
-      setFocusTokenId(null);
+    if (activeSceneId && !scenes.some((scene) => scene.id === activeSceneId)) {
+      const nearest = scenes[0] ?? null;
+      setActiveSceneId(nearest?.id ?? null);
+      setSelectedLedIds([]);
+      setInspectorTarget(
+        nearest ? { id: nearest.id, kind: 'scene' } : { kind: 'project' },
+      );
     }
-  }, [colours, selectedTokenId]);
+    if (
+      inspectorTarget.kind === 'palette' &&
+      !colours.some((token) => token.id === inspectorTarget.id)
+    ) {
+      setInspectorTarget({ kind: 'project' });
+    }
+  }, [activeSceneId, colours, inspectorTarget, scenes]);
 
-  function selectCreatedToken(command: EditorCommand) {
-    pendingNewTokenIdsRef.current = new Set(colours.map((token) => token.id));
+  function executeAndSelectCreated(
+    command: EditorCommand,
+    kind: 'palette' | 'scene',
+  ) {
+    const collection = kind === 'palette' ? colours : scenes;
+    pendingEntityIdsRef.current = {
+      ids: new Set(collection.map(({ id }) => id)),
+      kind,
+    };
     onExecuteCommand(command);
   }
 
+  function activateScene(scene: Scene) {
+    setActiveSceneId(scene.id);
+    setInspectorTarget({ id: scene.id, kind: 'scene' });
+    setSelectedLedIds([]);
+    setBottomPanel('scene');
+  }
+
+  function deleteScene(scene: Scene) {
+    const index = scenes.findIndex(({ id }) => id === scene.id);
+    const nearest = scenes[index + 1] ?? scenes[index - 1] ?? null;
+    if (activeSceneId === scene.id) setActiveSceneId(nearest?.id ?? null);
+    setInspectorTarget(
+      nearest ? { id: nearest.id, kind: 'scene' } : { kind: 'project' },
+    );
+    setSelectedLedIds([]);
+    onExecuteCommand({ id: scene.id, type: 'scene-deleted' });
+  }
+
   function deleteSelectedToken() {
-    if (!selectedToken) return;
-    const index = colours.findIndex((token) => token.id === selectedToken.id);
-    const nearestToken = colours[index + 1] ?? colours[index - 1] ?? null;
-    setSelectedTokenId(nearestToken?.id ?? null);
+    if (!selectedToken || paletteTokenUsageCount(project, selectedToken.id) > 0)
+      return;
+    const index = colours.findIndex(({ id }) => id === selectedToken.id);
+    const nearest = colours[index + 1] ?? colours[index - 1] ?? null;
+    setInspectorTarget(
+      nearest ? { id: nearest.id, kind: 'palette' } : { kind: 'project' },
+    );
     setFocusTokenId(null);
-    onExecuteCommand({
-      id: selectedToken.id,
-      type: 'palette-token-deleted',
-    });
+    onExecuteCommand({ id: selectedToken.id, type: 'palette-token-deleted' });
   }
 
   function navigatePalette(
@@ -142,13 +219,25 @@ export function ProjectWorkspace({
     if (event.key === 'Home') nextIndex = 0;
     if (event.key === 'End') nextIndex = colours.length - 1;
     if (nextIndex === null || nextIndex === index) return;
-
     event.preventDefault();
     const token = colours[nextIndex];
-    setSelectedTokenId(token.id);
+    setInspectorTarget({ id: token.id, kind: 'palette' });
     setFocusTokenId(null);
     window.setTimeout(() =>
       document.getElementById(`palette-token-${token.id}`)?.focus(),
+    );
+  }
+
+  function selectLeds(ledIds: string[]) {
+    setSelectedLedIds(ledIds);
+    if (ledIds.length > 0) setInspectorTarget({ kind: 'leds' });
+    else if (activeScene)
+      setInspectorTarget({ id: activeScene.id, kind: 'scene' });
+  }
+
+  function selectGroup(ledIds: string[], additive: boolean) {
+    selectLeds(
+      additive ? [...new Set([...selectedLedIds, ...ledIds])] : ledIds,
     );
   }
 
@@ -167,22 +256,19 @@ export function ProjectWorkspace({
     stopResizeRef.current?.();
     const startPosition = panel === 'bottom' ? event.clientY : event.clientX;
     let previousDelta = 0;
-
     function handlePointerMove(pointerEvent: PointerEvent) {
-      const currentPosition =
+      const position =
         panel === 'bottom' ? pointerEvent.clientY : pointerEvent.clientX;
-      const totalDelta = currentPosition - startPosition;
+      const totalDelta = position - startPosition;
       const nextDelta = totalDelta - previousDelta;
       previousDelta = totalDelta;
       setLayout((current) => resizeWorkspacePanel(current, panel, nextDelta));
     }
-
     function stopResizing() {
       window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', stopResizing);
       stopResizeRef.current = null;
     }
-
     stopResizeRef.current = stopResizing;
     window.addEventListener('pointermove', handlePointerMove);
     window.addEventListener('pointerup', stopResizing, { once: true });
@@ -194,7 +280,6 @@ export function ProjectWorkspace({
   ) {
     const step = event.shiftKey ? 24 : 8;
     let delta: number | null = null;
-
     if (panel === 'bottom') {
       if (event.key === 'ArrowUp') delta = -step;
       if (event.key === 'ArrowDown') delta = step;
@@ -202,11 +287,7 @@ export function ProjectWorkspace({
       if (event.key === 'ArrowLeft') delta = -step;
       if (event.key === 'ArrowRight') delta = step;
     }
-
-    if (delta === null) {
-      return;
-    }
-
+    if (delta === null) return;
     event.preventDefault();
     setLayout((current) => resizeWorkspacePanel(current, panel, delta));
   }
@@ -229,7 +310,7 @@ export function ProjectWorkspace({
             disabled={isBusy}
             onClick={onChooseAnother}
           >
-            <span aria-hidden="true">←</span>
+            ←
           </button>
           <div className="workspace-title">
             <div>
@@ -253,11 +334,14 @@ export function ProjectWorkspace({
           </div>
         </div>
 
-        <div className="workspace-transport" aria-label="Playback controls">
+        <div
+          className="workspace-transport"
+          aria-label="Preview timing and playback controls"
+        >
           <button
             type="button"
             disabled
-            title="Playback arrives in milestone 5"
+            title="Playback arrives in a later milestone"
           >
             <span aria-hidden="true">■</span>
             <span className="visually-hidden">Stop</span>
@@ -265,12 +349,20 @@ export function ProjectWorkspace({
           <button
             type="button"
             disabled
-            title="Playback arrives in milestone 5"
+            title="Playback arrives in a later milestone"
           >
             <span aria-hidden="true">▶</span>
             <span className="visually-hidden">Play</span>
           </button>
-          <span className="workspace-time">00:00.000</span>
+          <TimingControls
+            timing={project.timing}
+            onCommit={(changes) =>
+              onExecuteCommand({
+                changes,
+                type: 'project-timing-updated',
+              })
+            }
+          />
         </div>
 
         <div className="workspace-actions">
@@ -283,7 +375,7 @@ export function ProjectWorkspace({
               disabled={!canUndo}
               onClick={onUndo}
             >
-              <span aria-hidden="true">↶</span>
+              ↶
             </button>
             <button
               className="workspace-icon-button"
@@ -293,11 +385,11 @@ export function ProjectWorkspace({
               disabled={!canRedo}
               onClick={onRedo}
             >
-              <span aria-hidden="true">↷</span>
+              ↷
             </button>
           </div>
           <span className="profile-chip" title={project.hardwareProfile}>
-            {project.hardwareProfile}
+            {profile.name}
           </span>
           <button
             className="workspace-action-button"
@@ -350,10 +442,9 @@ export function ProjectWorkspace({
               }
               onClick={() => togglePanel('left')}
             >
-              <span aria-hidden="true">{layout.leftCollapsed ? '›' : '‹'}</span>
+              {layout.leftCollapsed ? '›' : '‹'}
             </button>
           </div>
-
           {layout.leftCollapsed ? (
             <div className="collapsed-panel-label" aria-hidden="true">
               Assets
@@ -363,25 +454,74 @@ export function ProjectWorkspace({
               <section className="asset-section">
                 <div className="asset-section-heading">
                   <h3>Scenes</h3>
-                  <span>0</span>
+                  <div>
+                    <span>{scenes.length}</span>
+                    <button
+                      aria-label="Add scene"
+                      className="asset-add-button"
+                      type="button"
+                      onClick={() =>
+                        executeAndSelectCreated(
+                          { type: 'scene-added' },
+                          'scene',
+                        )
+                      }
+                    >
+                      ＋ Add scene
+                    </button>
+                  </div>
                 </div>
-                <p className="asset-empty-copy">Scene editing arrives later.</p>
+                {scenes.length === 0 ? (
+                  <p className="asset-empty-copy">
+                    No scenes yet. Add one to begin editing inlays.
+                  </p>
+                ) : (
+                  <div
+                    className="asset-scene-list"
+                    role="listbox"
+                    aria-label="Scenes"
+                  >
+                    {scenes.map((scene) => (
+                      <button
+                        className="asset-scene"
+                        type="button"
+                        role="option"
+                        aria-selected={activeSceneId === scene.id}
+                        key={scene.id}
+                        onClick={() => activateScene(scene)}
+                      >
+                        <span className="asset-scene-icon" aria-hidden="true">
+                          ◆
+                        </span>
+                        <span>
+                          <strong>{scene.name}</strong>
+                          <small>
+                            {scene.loopLengthBeats} beats ·{' '}
+                            {Object.keys(scene.ledStates).length} lit
+                          </small>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </section>
-
               <section className="asset-section">
                 <div className="asset-section-heading">
                   <h3>Palette</h3>
                   <div>
                     <span>{colours.length}</span>
                     <button
+                      aria-label="Add colour"
                       className="asset-add-button"
                       type="button"
                       onClick={() =>
-                        selectCreatedToken({ type: 'palette-token-added' })
+                        executeAndSelectCreated(
+                          { type: 'palette-token-added' },
+                          'palette',
+                        )
                       }
                     >
-                      <span aria-hidden="true">＋</span>
-                      Add colour
+                      ＋ Add colour
                     </button>
                   </div>
                 </div>
@@ -398,17 +538,22 @@ export function ProjectWorkspace({
                         className="asset-colour"
                         type="button"
                         role="option"
-                        aria-selected={selectedTokenId === token.id}
+                        aria-label={`${token.name} ${token.value}`}
+                        aria-selected={
+                          inspectorTarget.kind === 'palette' &&
+                          inspectorTarget.id === token.id
+                        }
                         id={`palette-token-${token.id}`}
                         key={token.id}
                         tabIndex={
-                          selectedTokenId === token.id ||
-                          (selectedTokenId === null && index === 0)
+                          (inspectorTarget.kind === 'palette' &&
+                            inspectorTarget.id === token.id) ||
+                          (inspectorTarget.kind !== 'palette' && index === 0)
                             ? 0
                             : -1
                         }
                         onClick={() => {
-                          setSelectedTokenId(token.id);
+                          setInspectorTarget({ id: token.id, kind: 'palette' });
                           setFocusTokenId(null);
                         }}
                         onKeyDown={(event) => navigatePalette(index, event)}
@@ -426,13 +571,6 @@ export function ProjectWorkspace({
                     ))}
                   </div>
                 )}
-              </section>
-
-              <section className="asset-section asset-section-muted">
-                <div className="asset-section-heading">
-                  <h3>LED groups</h3>
-                  <span>Later</span>
-                </div>
               </section>
             </div>
           )}
@@ -458,7 +596,7 @@ export function ProjectWorkspace({
           <div className="hardware-workspace-heading">
             <div>
               <p className="workspace-eyebrow">Hardware editor</p>
-              <h2 id="hardware-title">Hardware preview</h2>
+              <h2 id="hardware-title">{activeScene?.name ?? profile.name}</h2>
             </div>
             <div
               className="workspace-view-actions"
@@ -481,12 +619,26 @@ export function ProjectWorkspace({
               </button>
             </div>
           </div>
-
+          <div className="hardware-groups" aria-label="Inlay selection groups">
+            {profile.groups.map((group) => (
+              <button
+                type="button"
+                disabled={!activeScene}
+                key={group.id}
+                onClick={(event) => selectGroup(group.ledIds, event.shiftKey)}
+              >
+                {group.name}
+                <span>{group.ledIds.length}</span>
+              </button>
+            ))}
+          </div>
           <div className="hardware-stage">
-            <div className="hardware-stage-glow" aria-hidden="true" />
-            <PanelPlaceholder
-              title="No scene selected"
-              description="The profile-driven hardware editor will appear here in milestone 3."
+            <FretboardEditor
+              palette={colours}
+              profile={profile}
+              scene={activeScene}
+              selectedLedIds={selectedLedIds}
+              onSelectionChange={selectLeds}
             />
           </div>
         </section>
@@ -523,37 +675,88 @@ export function ProjectWorkspace({
               }
               onClick={() => togglePanel('right')}
             >
-              <span aria-hidden="true">
-                {layout.rightCollapsed ? '‹' : '›'}
-              </span>
+              {layout.rightCollapsed ? '‹' : '›'}
             </button>
             {layout.rightCollapsed ? null : <h2>Inspector</h2>}
           </div>
-
           {layout.rightCollapsed ? (
             <div className="collapsed-panel-label" aria-hidden="true">
               Inspector
             </div>
           ) : (
             <div className="inspector-content">
-              {selectedToken ? (
+              {inspectorTarget.kind === 'leds' &&
+              activeScene &&
+              selectedLeds.length > 0 ? (
+                <LedSelectionInspector
+                  leds={selectedLeds}
+                  palette={colours}
+                  scene={activeScene}
+                  onPaint={(paletteTokenId) =>
+                    onExecuteCommand({
+                      ledIds: selectedLedIds,
+                      paletteTokenId,
+                      sceneId: activeScene.id,
+                      type: 'scene-leds-painted',
+                    })
+                  }
+                  onBrightnessChange={(brightnessPercent) =>
+                    onExecuteCommand({
+                      brightnessPercent,
+                      ledIds: selectedLedIds,
+                      sceneId: activeScene.id,
+                      type: 'scene-led-brightness-set',
+                    })
+                  }
+                  onTurnOff={() =>
+                    onExecuteCommand({
+                      ledIds: selectedLedIds,
+                      sceneId: activeScene.id,
+                      type: 'scene-leds-turned-off',
+                    })
+                  }
+                />
+              ) : selectedToken ? (
                 <PaletteInspector
                   key={selectedToken.id}
                   focusName={focusTokenId === selectedToken.id}
                   palette={colours}
                   token={selectedToken}
+                  usageCount={paletteTokenUsageCount(project, selectedToken.id)}
                   onDelete={deleteSelectedToken}
                   onDuplicate={() =>
-                    selectCreatedToken({
-                      id: selectedToken.id,
-                      type: 'palette-token-duplicated',
-                    })
+                    executeAndSelectCreated(
+                      {
+                        id: selectedToken.id,
+                        type: 'palette-token-duplicated',
+                      },
+                      'palette',
+                    )
                   }
                   onUpdate={(changes) =>
                     onExecuteCommand({
-                      id: selectedToken.id,
                       changes,
+                      id: selectedToken.id,
                       type: 'palette-token-updated',
+                    })
+                  }
+                />
+              ) : selectedScene ? (
+                <SceneInspector
+                  scene={selectedScene}
+                  sceneNames={scenes}
+                  onDelete={() => deleteScene(selectedScene)}
+                  onDuplicate={() =>
+                    executeAndSelectCreated(
+                      { id: selectedScene.id, type: 'scene-duplicated' },
+                      'scene',
+                    )
+                  }
+                  onUpdate={(changes) =>
+                    onExecuteCommand({
+                      changes,
+                      id: selectedScene.id,
+                      type: 'scene-updated',
                     })
                   }
                 />
@@ -564,24 +767,33 @@ export function ProjectWorkspace({
                     <dl>
                       <div>
                         <dt>Profile</dt>
-                        <dd>{project.hardwareProfile}</dd>
+                        <dd>{profile.name}</dd>
+                      </div>
+                      <div>
+                        <dt>Inlays</dt>
+                        <dd>{profile.leds.length}</dd>
                       </div>
                       <div>
                         <dt>Format</dt>
                         <dd>Schema v{project.schemaVersion}</dd>
                       </div>
                       <div>
-                        <dt>Palette</dt>
+                        <dt>Timing</dt>
                         <dd>
-                          {colours.length}{' '}
-                          {colours.length === 1 ? 'colour' : 'colours'}
+                          {project.timing.previewBpm} BPM ·{' '}
+                          {project.timing.timeSignature.numerator}/
+                          {project.timing.timeSignature.denominator}
                         </dd>
+                      </div>
+                      <div>
+                        <dt>Scenes</dt>
+                        <dd>{scenes.length}</dd>
                       </div>
                     </dl>
                   </section>
                   <PanelPlaceholder
                     title="Nothing selected"
-                    description="Select a palette colour to edit it."
+                    description="Select a scene, palette colour, or fretboard inlay to edit it."
                   />
                 </>
               )}
@@ -601,7 +813,6 @@ export function ProjectWorkspace({
           onKeyDown={(event) => resizeWithKeyboard('bottom', event)}
           onPointerDown={(event) => beginResize('bottom', event)}
         />
-
         <section
           className={`timeline-panel ${layout.bottomCollapsed ? 'timeline-panel-collapsed' : ''}`}
           aria-label="Timeline"
@@ -638,12 +849,9 @@ export function ProjectWorkspace({
               }
               onClick={() => togglePanel('bottom')}
             >
-              <span aria-hidden="true">
-                {layout.bottomCollapsed ? '⌃' : '⌄'}
-              </span>
+              {layout.bottomCollapsed ? '⌃' : '⌄'}
             </button>
           </div>
-
           {layout.bottomCollapsed ? null : (
             <div
               className="timeline-content"
@@ -652,18 +860,19 @@ export function ProjectWorkspace({
                 bottomPanel === 'show' ? 'Show sequence' : 'Scene timeline'
               }
             >
-              <PanelPlaceholder
-                title={
-                  bottomPanel === 'show'
-                    ? 'Your show sequence will live here'
-                    : 'Select a scene to edit its animation'
-                }
-                description={
-                  bottomPanel === 'show'
-                    ? 'Reusable scenes can be arranged after the scene editor is introduced.'
-                    : 'Effect and keyframe layers arrive in later milestones.'
-                }
-              />
+              {bottomPanel === 'show' ? (
+                <PanelPlaceholder
+                  title="MIDI scene order will live here"
+                  description="Automatic timed progression is deliberately deferred while MIDI triggering is designed."
+                />
+              ) : activeScene ? (
+                <SceneTimeline scene={activeScene} timing={project.timing} />
+              ) : (
+                <PanelPlaceholder
+                  title="Select a scene to view its loop"
+                  description="Scenes loop until a future MIDI scene-change message."
+                />
+              )}
             </div>
           )}
         </section>

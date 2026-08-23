@@ -3,7 +3,7 @@ import kmsBassExampleJson from '../../../examples/kms-4-string-31-inlay-v1.ledst
 
 export const projectExamples = [
   {
-    description: 'A starter palette for the 31-inlay KMS bass profile.',
+    description: 'A four-beat marker scene for the 31-inlay KMS profile.',
     id: 'kms-4-string-31-inlay-v1',
     project: parseProjectJson(kmsBassExampleJson),
   },

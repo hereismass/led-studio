@@ -6,6 +6,11 @@ import {
   serializeProject,
   type Project,
 } from '@led-studio/project-format';
+import {
+  HardwareCompatibilityError,
+  KMS_PROFILE_ID,
+  validateProjectHardwareReferences,
+} from '@led-studio/hardware-profiles';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AppLifecycleGateway } from './appLifecycle';
 import { applyEditorCommand, type EditorCommand } from './editorCommands';
@@ -17,7 +22,7 @@ import type {
   UnsavedChangesIntent,
 } from './projectFiles';
 
-const DEFAULT_HARDWARE_PROFILE = 'kms-4-string-31-inlay-v1';
+const DEFAULT_HARDWARE_PROFILE = KMS_PROFILE_ID;
 
 export type ProjectOperation = 'confirming' | 'idle' | 'opening' | 'saving';
 
@@ -85,11 +90,13 @@ export function createActiveProjectSession(
   source: ProjectSource,
   savedRevision: number | null,
 ): ActiveProjectSession {
+  const parsedProject = parseProject(project);
+  validateProjectHardwareReferences(parsedProject);
   return {
     future: [],
     nextRevision: 1,
     past: [],
-    present: { project: parseProject(project), revision: 0 },
+    present: { project: parsedProject, revision: 0 },
     savedRevision,
     source,
   };
@@ -212,6 +219,9 @@ export function projectSessionReducer(
 }
 
 function describeProjectError(error: unknown): string {
+  if (error instanceof HardwareCompatibilityError) {
+    return `This project is not compatible with this build. ${error.message}`;
+  }
   if (!(error instanceof ProjectFormatError)) {
     return 'This is not a valid LED Studio project.';
   }
