@@ -1,5 +1,7 @@
 # LED Studio
 
+The phased editor implementation is tracked in the [editor UI roadmap](docs/editor-roadmap.md).
+
 LED Studio is a Mac-first desktop editor for lighting projects targeting configurable LED hardware. The first hardware profile represents a KMS Thunderbird-style four-string bass with 31 independently addressable RGB inlays, but the project format is intentionally not instrument-specific.
 
 This repository is a pnpm workspace so it can also contain controller firmware and supporting tools in the future.

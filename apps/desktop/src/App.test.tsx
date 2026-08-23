@@ -78,14 +78,14 @@ function renderApp({
   projectStorage?: ProjectStorageGateway;
   unsavedChanges?: UnsavedChangesGateway;
 } = {}) {
-  render(
+  const view = render(
     <App
       appLifecycle={appLifecycle}
       projectStorage={projectStorage}
       unsavedChanges={unsavedChanges}
     />,
   );
-  return { appLifecycle, projectStorage, unsavedChanges };
+  return { appLifecycle, projectStorage, unsavedChanges, ...view };
 }
 
 describe('App project launcher and lifecycle', () => {
@@ -115,6 +115,60 @@ describe('App project launcher and lifecycle', () => {
     expect(screen.getByText('Unsaved new project')).toBeInTheDocument();
     expect(screen.getByText('Unsaved')).toBeInTheDocument();
     expect(screen.getByText('No palette colours yet')).toBeInTheDocument();
+  });
+
+  it('opens a switchable editor workspace with collapsible panels', async () => {
+    const user = userEvent.setup();
+    renderApp();
+
+    await user.click(screen.getByRole('button', { name: /new project/i }));
+
+    expect(
+      screen.getByRole('complementary', { name: 'Project assets' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('complementary', { name: 'Inspector' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Show sequence' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+
+    const assetsResizer = screen.getByRole('separator', {
+      name: 'Resize assets panel',
+    });
+    fireEvent.keyDown(assetsResizer, { key: 'ArrowRight' });
+    expect(assetsResizer).toHaveAttribute('aria-valuenow', '244');
+
+    await user.click(screen.getByRole('tab', { name: 'Scene timeline' }));
+    expect(
+      screen.getByRole('tabpanel', { name: 'Scene timeline' }),
+    ).toHaveTextContent('Select a scene to edit its animation');
+
+    await user.click(
+      screen.getByRole('button', { name: 'Collapse assets panel' }),
+    );
+    expect(
+      screen.getByRole('button', { name: 'Expand assets panel' }),
+    ).toBeInTheDocument();
+  });
+
+  it('restores workspace panel preferences independently from a project', async () => {
+    const user = userEvent.setup();
+    const firstRender = renderApp();
+
+    await user.click(screen.getByRole('button', { name: /new project/i }));
+    await user.click(
+      screen.getByRole('button', { name: 'Collapse inspector panel' }),
+    );
+    firstRender.unmount();
+
+    renderApp();
+    await user.click(screen.getByRole('button', { name: /new project/i }));
+
+    expect(
+      screen.getByRole('button', { name: 'Expand inspector panel' }),
+    ).toBeInTheDocument();
   });
 
   it('loads an example as an unsaved template and saves it through Save As', async () => {

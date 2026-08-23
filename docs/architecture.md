@@ -12,6 +12,8 @@ The desktop project-session controller owns the active document and revision his
 
 React owns application layout, controls, inspectors, and low-frequency state presentation. Presentational components receive state and commands from the project-session controller; they do not perform filesystem or lifecycle work directly.
 
+Workspace panel sizes and collapsed state are versioned local application preferences. They are deliberately separate from project data so opening a project does not change the user's editor layout.
+
 No additional global state library is needed while a reducer and controller hook provide a clear state transition boundary.
 
 ## Future playback and rendering

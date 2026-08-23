@@ -4,7 +4,7 @@ import {
   type AppLifecycleGateway,
 } from './appLifecycle';
 import { ProjectLauncher } from './ProjectLauncher';
-import { ProjectPreview } from './ProjectPreview';
+import { ProjectWorkspace } from './ProjectWorkspace';
 import {
   nativeProjectStorageGateway,
   nativeUnsavedChangesGateway,
@@ -49,7 +49,7 @@ export function App({
 
   if (activeProject) {
     return (
-      <ProjectPreview
+      <ProjectWorkspace
         activeProject={activeProject}
         operation={session.state.operation}
         onChooseAnother={() => void session.requestChooseAnother()}
