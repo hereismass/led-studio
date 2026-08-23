@@ -1,98 +1,63 @@
-import { message, open, save } from '@tauri-apps/plugin-dialog';
-import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
+import { invoke } from '@tauri-apps/api/core';
+import { message } from '@tauri-apps/plugin-dialog';
 
 export interface ProjectFileReference {
   fileName: string;
-  path: string;
+  handle: string;
 }
 
 export interface OpenedProjectFile extends ProjectFileReference {
   contents: string;
 }
 
-export type UnsavedProjectDecision = 'cancel' | 'discard' | 'save';
-
-export interface ProjectFileGateway {
-  confirmUnsavedProject(name: string): Promise<UnsavedProjectDecision>;
+export interface ProjectStorageGateway {
   openProject(): Promise<OpenedProjectFile | null>;
-  saveProject(path: string, contents: string): Promise<void>;
+  saveProject(file: ProjectFileReference, contents: string): Promise<void>;
   saveProjectAs(
     suggestedName: string,
     contents: string,
   ): Promise<ProjectFileReference | null>;
 }
 
-function fileNameFromPath(path: string): string {
-  return path.replaceAll('\\', '/').split('/').at(-1) || 'Opened project';
-}
+export type UnsavedChangesDecision = 'cancel' | 'discard' | 'save';
+export type UnsavedChangesIntent = 'choose-another' | 'quit';
 
-export function suggestedProjectFileName(projectName: string): string {
-  const stem = projectName
-    .normalize('NFKD')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-
-  return `${stem || 'untitled-project'}.ledstudio`;
+export interface UnsavedChangesGateway {
+  confirmUnsavedChanges(
+    name: string,
+    intent: UnsavedChangesIntent,
+  ): Promise<UnsavedChangesDecision>;
 }
 
 export async function openProject(): Promise<OpenedProjectFile | null> {
-  const path = await open({
-    directory: false,
-    multiple: false,
-    filters: [
-      {
-        name: 'LED Studio project',
-        extensions: ['ledstudio', 'json'],
-      },
-    ],
-  });
-
-  if (path === null) {
-    return null;
-  }
-
-  return {
-    contents: await readTextFile(path),
-    fileName: fileNameFromPath(path),
-    path,
-  };
+  return invoke<OpenedProjectFile | null>('open_project');
 }
 
 export async function saveProject(
-  path: string,
+  file: ProjectFileReference,
   contents: string,
 ): Promise<void> {
-  await writeTextFile(path, contents);
+  await invoke('save_project', { contents, handle: file.handle });
 }
 
 export async function saveProjectAs(
   suggestedName: string,
   contents: string,
 ): Promise<ProjectFileReference | null> {
-  const path = await save({
-    defaultPath: suggestedProjectFileName(suggestedName),
-    filters: [{ name: 'LED Studio project', extensions: ['ledstudio'] }],
-    title: 'Save LED Studio project',
+  return invoke<ProjectFileReference | null>('save_project_as', {
+    contents,
+    suggestedName,
   });
-
-  if (path === null) {
-    return null;
-  }
-
-  await writeTextFile(path, contents);
-
-  return {
-    fileName: fileNameFromPath(path),
-    path,
-  };
 }
 
-export async function confirmUnsavedProject(
+export async function confirmUnsavedChanges(
   name: string,
-): Promise<UnsavedProjectDecision> {
+  intent: UnsavedChangesIntent,
+): Promise<UnsavedChangesDecision> {
+  const action =
+    intent === 'quit' ? 'quitting LED Studio' : 'choosing another project';
   const response = await message(
-    `Do you want to save changes to “${name}” before choosing another project?`,
+    `Do you want to save changes to “${name}” before ${action}?`,
     {
       buttons: { yes: 'Save', no: 'Discard', cancel: 'Cancel' },
       kind: 'warning',
@@ -111,9 +76,12 @@ export async function confirmUnsavedProject(
   return 'cancel';
 }
 
-export const nativeProjectFileGateway: ProjectFileGateway = {
-  confirmUnsavedProject,
+export const nativeProjectStorageGateway: ProjectStorageGateway = {
   openProject,
   saveProject,
   saveProjectAs,
+};
+
+export const nativeUnsavedChangesGateway: UnsavedChangesGateway = {
+  confirmUnsavedChanges,
 };

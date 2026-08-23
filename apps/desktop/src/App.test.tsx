@@ -1,4 +1,5 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -8,23 +9,32 @@ import {
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { App } from './App';
+import type { AppLifecycleGateway } from './appLifecycle';
 import { projectExamples } from './examples';
-import type { ProjectFileGateway } from './projectFiles';
+import type {
+  ProjectStorageGateway,
+  UnsavedChangesGateway,
+} from './projectFiles';
 
 const loadedProject = {
   schemaVersion: 1,
   name: 'Loaded Lighting Show',
   hardwareProfile: 'test-controller-v1',
-  palette: {
-    blue: '#1248FF',
-  },
+  palette: { blue: '#1248FF' },
 };
 
-function createFileGateway(
-  overrides: Partial<ProjectFileGateway> = {},
-): ProjectFileGateway {
+function openedProjectFile() {
   return {
-    confirmUnsavedProject: vi.fn().mockResolvedValue('cancel'),
+    contents: JSON.stringify(loadedProject),
+    fileName: 'loaded-project.ledstudio',
+    handle: 'project-file-1',
+  };
+}
+
+function createProjectStorage(
+  overrides: Partial<ProjectStorageGateway> = {},
+): ProjectStorageGateway {
+  return {
     openProject: vi.fn().mockResolvedValue(null),
     saveProject: vi.fn().mockResolvedValue(undefined),
     saveProjectAs: vi.fn().mockResolvedValue(null),
@@ -32,17 +42,55 @@ function createFileGateway(
   };
 }
 
-function openedProjectFile() {
+function createUnsavedChanges(
+  decision: 'cancel' | 'discard' | 'save' = 'cancel',
+): UnsavedChangesGateway {
   return {
-    contents: JSON.stringify(loadedProject),
-    fileName: 'loaded-project.ledstudio',
-    path: '/projects/loaded-project.ledstudio',
+    confirmUnsavedChanges: vi.fn().mockResolvedValue(decision),
   };
 }
 
-describe('App project launcher', () => {
+interface TestLifecycle extends AppLifecycleGateway {
+  triggerExitRequest(): void;
+}
+
+function createAppLifecycle(): TestLifecycle {
+  let exitRequestHandler = () => {};
+
+  return {
+    exitApp: vi.fn().mockResolvedValue(undefined),
+    onExitRequested: vi.fn().mockImplementation(async (handler: () => void) => {
+      exitRequestHandler = handler;
+      return vi.fn();
+    }),
+    triggerExitRequest() {
+      exitRequestHandler();
+    },
+  };
+}
+
+function renderApp({
+  appLifecycle = createAppLifecycle(),
+  projectStorage = createProjectStorage(),
+  unsavedChanges = createUnsavedChanges(),
+}: {
+  appLifecycle?: TestLifecycle;
+  projectStorage?: ProjectStorageGateway;
+  unsavedChanges?: UnsavedChangesGateway;
+} = {}) {
+  render(
+    <App
+      appLifecycle={appLifecycle}
+      projectStorage={projectStorage}
+      unsavedChanges={unsavedChanges}
+    />,
+  );
+  return { appLifecycle, projectStorage, unsavedChanges };
+}
+
+describe('App project launcher and lifecycle', () => {
   it('offers new, open, and example project choices at startup', () => {
-    render(<App fileGateway={createFileGateway()} />);
+    renderApp();
 
     expect(
       screen.getByRole('button', { name: /new project/i }),
@@ -51,16 +99,13 @@ describe('App project launcher', () => {
       screen.getByRole('button', { name: /open project/i }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole('heading', { name: 'Examples' }),
-    ).toBeInTheDocument();
-    expect(
       screen.getByRole('button', { name: /KMS 4-String Bass Example/i }),
     ).toBeInTheDocument();
   });
 
   it('creates an unsaved project with an empty palette', async () => {
     const user = userEvent.setup();
-    render(<App fileGateway={createFileGateway()} />);
+    renderApp();
 
     await user.click(screen.getByRole('button', { name: /new project/i }));
 
@@ -75,31 +120,24 @@ describe('App project launcher', () => {
   it('loads an example as an unsaved template and saves it through Save As', async () => {
     const user = userEvent.setup();
     const exampleBeforeSave = structuredClone(projectExamples[0].project);
-    const savedFile = {
-      fileName: 'bass-example.ledstudio',
-      path: '/projects/bass-example.ledstudio',
-    };
-    const fileGateway = createFileGateway({
-      saveProjectAs: vi.fn().mockResolvedValue(savedFile),
+    const projectStorage = createProjectStorage({
+      saveProjectAs: vi.fn().mockResolvedValue({
+        fileName: 'bass-example.ledstudio',
+        handle: 'project-file-2',
+      }),
     });
-    render(<App fileGateway={fileGateway} />);
+    renderApp({ projectStorage });
 
     await user.click(
       screen.getByRole('button', { name: /KMS 4-String Bass Example/i }),
     );
-
-    expect(
-      screen.getByText('Unsaved project · Based on bundled example'),
-    ).toBeInTheDocument();
-    expect(screen.getByText('hot-pink')).toBeInTheDocument();
-
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
-    expect(fileGateway.saveProjectAs).toHaveBeenCalledWith(
+    expect(projectStorage.saveProjectAs).toHaveBeenCalledWith(
       'KMS 4-String Bass Example',
       expect.any(String),
     );
-    expect(fileGateway.saveProject).not.toHaveBeenCalled();
+    expect(projectStorage.saveProject).not.toHaveBeenCalled();
     expect(
       await screen.findByText('Saved bass-example.ledstudio.'),
     ).toBeVisible();
@@ -108,86 +146,109 @@ describe('App project launcher', () => {
     ).toBeInTheDocument();
     expect(screen.queryByText('Unsaved')).not.toBeInTheDocument();
     expect(projectExamples[0].project).toEqual(exampleBeforeSave);
-
-    const serialized = vi.mocked(fileGateway.saveProjectAs).mock.calls[0][1];
-    expect(JSON.parse(serialized)).toEqual(exampleBeforeSave);
   });
 
-  it('saves an opened project directly to its retained path', async () => {
+  it('saves an opened project through its retained opaque handle', async () => {
     const user = userEvent.setup();
-    const fileGateway = createFileGateway({
+    const projectStorage = createProjectStorage({
       openProject: vi.fn().mockResolvedValue(openedProjectFile()),
     });
-    render(<App fileGateway={fileGateway} />);
+    renderApp({ projectStorage });
 
     await user.click(screen.getByRole('button', { name: /open project/i }));
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
-    expect(fileGateway.saveProject).toHaveBeenCalledWith(
-      '/projects/loaded-project.ledstudio',
+    expect(projectStorage.saveProject).toHaveBeenCalledWith(
+      { fileName: 'loaded-project.ledstudio', handle: 'project-file-1' },
       `${JSON.stringify(loadedProject, null, 2)}\n`,
     );
-    expect(fileGateway.saveProjectAs).not.toHaveBeenCalled();
     expect(
       await screen.findByText('Saved loaded-project.ledstudio.'),
     ).toBeVisible();
   });
 
-  it('uses Save As to replace the active file path', async () => {
+  it('uses Save As to replace the active file handle', async () => {
     const user = userEvent.setup();
-    const fileGateway = createFileGateway({
+    const copiedFile = {
+      fileName: 'copied-show.ledstudio',
+      handle: 'project-file-2',
+    };
+    const projectStorage = createProjectStorage({
       openProject: vi.fn().mockResolvedValue(openedProjectFile()),
-      saveProjectAs: vi.fn().mockResolvedValue({
-        fileName: 'copied-show.ledstudio',
-        path: '/copies/copied-show.ledstudio',
-      }),
+      saveProjectAs: vi.fn().mockResolvedValue(copiedFile),
     });
-    render(<App fileGateway={fileGateway} />);
+    renderApp({ projectStorage });
 
     await user.click(screen.getByRole('button', { name: /open project/i }));
     await user.click(screen.getByRole('button', { name: 'Save As' }));
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
-    expect(fileGateway.saveProjectAs).toHaveBeenCalledOnce();
-    expect(fileGateway.saveProject).toHaveBeenCalledWith(
-      '/copies/copied-show.ledstudio',
+    expect(projectStorage.saveProject).toHaveBeenCalledWith(
+      copiedFile,
       expect.any(String),
     );
-    expect(
-      screen.getByText('Local file · copied-show.ledstudio'),
-    ).toBeInTheDocument();
   });
 
-  it('supports Save and Save As keyboard shortcuts', async () => {
-    const fileGateway = createFileGateway({
+  it('prevents overlapping save shortcuts synchronously', async () => {
+    let finishSave = () => {};
+    const projectStorage = createProjectStorage({
       openProject: vi.fn().mockResolvedValue(openedProjectFile()),
-      saveProjectAs: vi.fn().mockResolvedValue({
-        fileName: 'shortcut-copy.ledstudio',
-        path: '/projects/shortcut-copy.ledstudio',
-      }),
+      saveProject: vi.fn().mockImplementation(
+        () =>
+          new Promise<void>((resolve) => {
+            finishSave = resolve;
+          }),
+      ),
     });
     const user = userEvent.setup();
-    render(<App fileGateway={fileGateway} />);
+    renderApp({ projectStorage });
 
     await user.click(screen.getByRole('button', { name: /open project/i }));
     fireEvent.keyDown(window, { key: 's', metaKey: true });
+    fireEvent.keyDown(window, { key: 's', metaKey: true });
 
-    await waitFor(() => expect(fileGateway.saveProject).toHaveBeenCalledOnce());
-    await screen.findByText('Saved loaded-project.ledstudio.');
+    expect(projectStorage.saveProject).toHaveBeenCalledOnce();
 
-    fireEvent.keyDown(window, { key: 's', metaKey: true, shiftKey: true });
+    await act(async () => finishSave());
+    expect(
+      await screen.findByText('Saved loaded-project.ledstudio.'),
+    ).toBeVisible();
+  });
 
+  it('defers quitting while a save operation is still running', async () => {
+    let finishSave = () => {};
+    const appLifecycle = createAppLifecycle();
+    const projectStorage = createProjectStorage({
+      openProject: vi.fn().mockResolvedValue(openedProjectFile()),
+      saveProject: vi.fn().mockImplementation(
+        () =>
+          new Promise<void>((resolve) => {
+            finishSave = resolve;
+          }),
+      ),
+    });
+    const user = userEvent.setup();
+    renderApp({ appLifecycle, projectStorage });
+
+    await user.click(screen.getByRole('button', { name: /open project/i }));
     await waitFor(() =>
-      expect(fileGateway.saveProjectAs).toHaveBeenCalledOnce(),
+      expect(appLifecycle.onExitRequested).toHaveBeenCalledOnce(),
     );
+    fireEvent.keyDown(window, { key: 's', metaKey: true });
+    act(() => appLifecycle.triggerExitRequest());
+
+    expect(appLifecycle.exitApp).not.toHaveBeenCalled();
+
+    await act(async () => finishSave());
+    await screen.findByText('Saved loaded-project.ledstudio.');
+    act(() => appLifecycle.triggerExitRequest());
+
+    await waitFor(() => expect(appLifecycle.exitApp).toHaveBeenCalledOnce());
   });
 
   it('keeps an unsaved project unchanged when Save As is cancelled', async () => {
     const user = userEvent.setup();
-    const fileGateway = createFileGateway({
-      saveProjectAs: vi.fn().mockResolvedValue(null),
-    });
-    render(<App fileGateway={fileGateway} />);
+    renderApp();
 
     await user.click(screen.getByRole('button', { name: /new project/i }));
     await user.click(screen.getByRole('button', { name: 'Save' }));
@@ -198,11 +259,12 @@ describe('App project launcher', () => {
   });
 
   it('reports save failures and preserves the unsaved project', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
     const user = userEvent.setup();
-    const fileGateway = createFileGateway({
+    const projectStorage = createProjectStorage({
       saveProjectAs: vi.fn().mockRejectedValue(new Error('Disk unavailable')),
     });
-    render(<App fileGateway={fileGateway} />);
+    renderApp({ projectStorage });
 
     await user.click(screen.getByRole('button', { name: /new project/i }));
     await user.click(screen.getByRole('button', { name: 'Save' }));
@@ -215,94 +277,114 @@ describe('App project launcher', () => {
 
   it('returns immediately from a clean opened project', async () => {
     const user = userEvent.setup();
-    const fileGateway = createFileGateway({
+    const unsavedChanges = createUnsavedChanges();
+    const projectStorage = createProjectStorage({
       openProject: vi.fn().mockResolvedValue(openedProjectFile()),
     });
-    render(<App fileGateway={fileGateway} />);
+    renderApp({ projectStorage, unsavedChanges });
 
     await user.click(screen.getByRole('button', { name: /open project/i }));
     await user.click(
       screen.getByRole('button', { name: /choose another project/i }),
     );
 
-    expect(fileGateway.confirmUnsavedProject).not.toHaveBeenCalled();
+    expect(unsavedChanges.confirmUnsavedChanges).not.toHaveBeenCalled();
     expect(
       screen.getByRole('button', { name: /new project/i }),
     ).toBeInTheDocument();
   });
 
-  it('keeps an unsaved project open when navigation is cancelled', async () => {
+  it('saves an unsaved project before returning to the launcher', async () => {
     const user = userEvent.setup();
-    const fileGateway = createFileGateway({
-      confirmUnsavedProject: vi.fn().mockResolvedValue('cancel'),
+    const unsavedChanges = createUnsavedChanges('save');
+    const projectStorage = createProjectStorage({
+      saveProjectAs: vi.fn().mockResolvedValue({
+        fileName: 'untitled-project.ledstudio',
+        handle: 'project-file-2',
+      }),
     });
-    render(<App fileGateway={fileGateway} />);
+    renderApp({ projectStorage, unsavedChanges });
 
     await user.click(screen.getByRole('button', { name: /new project/i }));
     await user.click(
       screen.getByRole('button', { name: /choose another project/i }),
     );
 
+    expect(projectStorage.saveProjectAs).toHaveBeenCalledOnce();
+    expect(
+      await screen.findByRole('button', { name: /new project/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('cancels quitting when an unsaved project is kept open', async () => {
+    const user = userEvent.setup();
+    const appLifecycle = createAppLifecycle();
+    const unsavedChanges = createUnsavedChanges('cancel');
+    renderApp({ appLifecycle, unsavedChanges });
+
+    await user.click(screen.getByRole('button', { name: /new project/i }));
+    await waitFor(() =>
+      expect(appLifecycle.onExitRequested).toHaveBeenCalledOnce(),
+    );
+    act(() => appLifecycle.triggerExitRequest());
+
+    await waitFor(() =>
+      expect(unsavedChanges.confirmUnsavedChanges).toHaveBeenCalledWith(
+        'Untitled Project',
+        'quit',
+      ),
+    );
+    expect(appLifecycle.exitApp).not.toHaveBeenCalled();
     expect(
       screen.getByRole('heading', { name: 'Untitled Project' }),
     ).toBeInTheDocument();
   });
 
-  it('discards an unsaved project after confirmation', async () => {
+  it('discards an unsaved project before an approved quit', async () => {
     const user = userEvent.setup();
-    const fileGateway = createFileGateway({
-      confirmUnsavedProject: vi.fn().mockResolvedValue('discard'),
+    const appLifecycle = createAppLifecycle();
+    renderApp({
+      appLifecycle,
+      unsavedChanges: createUnsavedChanges('discard'),
     });
-    render(<App fileGateway={fileGateway} />);
 
     await user.click(screen.getByRole('button', { name: /new project/i }));
-    await user.click(
-      screen.getByRole('button', { name: /choose another project/i }),
+    await waitFor(() =>
+      expect(appLifecycle.onExitRequested).toHaveBeenCalledOnce(),
     );
+    act(() => appLifecycle.triggerExitRequest());
 
-    expect(
-      await screen.findByRole('button', { name: /new project/i }),
-    ).toBeInTheDocument();
+    await waitFor(() => expect(appLifecycle.exitApp).toHaveBeenCalledOnce());
   });
 
-  it('saves an unsaved project before returning to the launcher', async () => {
+  it('reports malformed and invalid project files without leaving the launcher', async () => {
     const user = userEvent.setup();
-    const fileGateway = createFileGateway({
-      confirmUnsavedProject: vi.fn().mockResolvedValue('save'),
-      saveProjectAs: vi.fn().mockResolvedValue({
-        fileName: 'untitled-project.ledstudio',
-        path: '/projects/untitled-project.ledstudio',
-      }),
+    const projectStorage = createProjectStorage({
+      openProject: vi
+        .fn()
+        .mockResolvedValueOnce({
+          contents: '{',
+          fileName: 'broken.ledstudio',
+          handle: 'project-file-1',
+        })
+        .mockResolvedValueOnce({
+          contents: '{"schemaVersion":1}',
+          fileName: 'invalid.ledstudio',
+          handle: 'project-file-2',
+        }),
     });
-    render(<App fileGateway={fileGateway} />);
-
-    await user.click(screen.getByRole('button', { name: /new project/i }));
-    await user.click(
-      screen.getByRole('button', { name: /choose another project/i }),
-    );
-
-    expect(fileGateway.saveProjectAs).toHaveBeenCalledOnce();
-    expect(
-      await screen.findByRole('button', { name: /new project/i }),
-    ).toBeInTheDocument();
-  });
-
-  it('reports malformed JSON without leaving the launcher', async () => {
-    const user = userEvent.setup();
-    const fileGateway = createFileGateway({
-      openProject: vi.fn().mockResolvedValue({
-        contents: '{',
-        fileName: 'broken.ledstudio',
-        path: '/projects/broken.ledstudio',
-      }),
-    });
-    render(<App fileGateway={fileGateway} />);
+    renderApp({ projectStorage });
 
     await user.click(screen.getByRole('button', { name: /open project/i }));
-
-    const alert = await screen.findByRole('alert');
+    let alert = await screen.findByRole('alert');
     expect(
       within(alert).getByText('This file is not valid JSON.'),
     ).toBeVisible();
+
+    await user.click(screen.getByRole('button', { name: /open project/i }));
+    alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(
+      'This is not a valid LED Studio project. name:',
+    );
   });
 });

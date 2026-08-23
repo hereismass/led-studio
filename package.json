@@ -12,11 +12,12 @@
     "build": "pnpm --filter @led-studio/desktop tauri build",
     "build:web": "pnpm --filter @led-studio/desktop build",
     "test": "pnpm --recursive --if-present test",
+    "test:rust": "cargo test --locked --manifest-path apps/desktop/src-tauri/Cargo.toml",
     "typecheck": "pnpm --recursive --if-present typecheck",
     "check:rust": "cargo check --locked --manifest-path apps/desktop/src-tauri/Cargo.toml",
     "format": "prettier --write . && cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml",
     "format:check": "prettier --check . && cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml -- --check",
-    "check": "pnpm format:check && pnpm typecheck && pnpm test && pnpm build:web && pnpm check:rust"
+    "check": "pnpm format:check && pnpm typecheck && pnpm test && pnpm test:rust && pnpm build:web && pnpm check:rust"
   },
   "devDependencies": {
     "prettier": "^3.9.6"

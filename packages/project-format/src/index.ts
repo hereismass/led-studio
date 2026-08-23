@@ -27,17 +27,70 @@ export const ProjectSchema = z
 
 export type Project = z.infer<typeof ProjectSchema>;
 
+export type ProjectFormatErrorKind = 'invalid-json' | 'invalid-project';
+
+export interface ProjectValidationIssue {
+  message: string;
+  path: (number | string)[];
+}
+
+export class ProjectFormatError extends Error {
+  readonly issues: ProjectValidationIssue[];
+  readonly kind: ProjectFormatErrorKind;
+
+  constructor(
+    kind: ProjectFormatErrorKind,
+    message: string,
+    issues: ProjectValidationIssue[] = [],
+    options?: ErrorOptions,
+  ) {
+    super(message, options);
+    this.name = 'ProjectFormatError';
+    this.kind = kind;
+    this.issues = issues;
+  }
+}
+
 export interface CreateProjectInput {
   name: string;
   hardwareProfile: string;
 }
 
 export function parseProject(input: unknown): Project {
-  return ProjectSchema.parse(input);
+  const result = ProjectSchema.safeParse(input);
+
+  if (!result.success) {
+    throw new ProjectFormatError(
+      'invalid-project',
+      'The project does not match the supported project format.',
+      result.error.issues.map((issue) => ({
+        message: issue.message,
+        path: issue.path.map((part) =>
+          typeof part === 'symbol' ? String(part) : part,
+        ),
+      })),
+      { cause: result.error },
+    );
+  }
+
+  return result.data;
 }
 
 export function parseProjectJson(json: string): Project {
-  return parseProject(JSON.parse(json) as unknown);
+  let input: unknown;
+
+  try {
+    input = JSON.parse(json) as unknown;
+  } catch (error) {
+    throw new ProjectFormatError(
+      'invalid-json',
+      'The project file is not valid JSON.',
+      [],
+      { cause: error },
+    );
+  }
+
+  return parseProject(input);
 }
 
 export function serializeProject(project: Project): string {

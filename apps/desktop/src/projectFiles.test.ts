@@ -1,115 +1,66 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { messageMock, openMock, readTextFileMock, saveMock, writeTextFileMock } =
-  vi.hoisted(() => ({
-    messageMock: vi.fn(),
-    openMock: vi.fn(),
-    readTextFileMock: vi.fn(),
-    saveMock: vi.fn(),
-    writeTextFileMock: vi.fn(),
-  }));
-
-vi.mock('@tauri-apps/plugin-dialog', () => ({
-  message: messageMock,
-  open: openMock,
-  save: saveMock,
+const { invokeMock, messageMock } = vi.hoisted(() => ({
+  invokeMock: vi.fn(),
+  messageMock: vi.fn(),
 }));
 
-vi.mock('@tauri-apps/plugin-fs', () => ({
-  readTextFile: readTextFileMock,
-  writeTextFile: writeTextFileMock,
-}));
+vi.mock('@tauri-apps/api/core', () => ({ invoke: invokeMock }));
+vi.mock('@tauri-apps/plugin-dialog', () => ({ message: messageMock }));
 
 import {
-  confirmUnsavedProject,
+  confirmUnsavedChanges,
   openProject,
   saveProject,
   saveProjectAs,
-  suggestedProjectFileName,
 } from './projectFiles';
 
-describe('project file gateway', () => {
+describe('project storage adapter', () => {
   beforeEach(() => {
+    invokeMock.mockReset();
     messageMock.mockReset();
-    openMock.mockReset();
-    readTextFileMock.mockReset();
-    saveMock.mockReset();
-    writeTextFileMock.mockReset();
   });
 
-  it('opens LED Studio and JSON files and retains the full path', async () => {
-    openMock.mockResolvedValue('/projects/my-show.ledstudio');
-    readTextFileMock.mockResolvedValue('{"schemaVersion":1}');
-
-    await expect(openProject()).resolves.toEqual({
+  it('opens projects through the native command', async () => {
+    const opened = {
       contents: '{"schemaVersion":1}',
-      fileName: 'my-show.ledstudio',
-      path: '/projects/my-show.ledstudio',
-    });
-    expect(openMock).toHaveBeenCalledWith({
-      directory: false,
-      multiple: false,
-      filters: [
-        { name: 'LED Studio project', extensions: ['ledstudio', 'json'] },
-      ],
-    });
-    expect(readTextFileMock).toHaveBeenCalledWith(
-      '/projects/my-show.ledstudio',
-    );
+      fileName: 'show.ledstudio',
+      handle: 'project-file-1',
+    };
+    invokeMock.mockResolvedValue(opened);
+
+    await expect(openProject()).resolves.toEqual(opened);
+    expect(invokeMock).toHaveBeenCalledWith('open_project');
   });
 
-  it('does not read a file when opening is cancelled', async () => {
-    openMock.mockResolvedValue(null);
+  it('saves through an opaque native file handle', async () => {
+    invokeMock.mockResolvedValue(undefined);
 
-    await expect(openProject()).resolves.toBeNull();
-    expect(readTextFileMock).not.toHaveBeenCalled();
-  });
-
-  it('writes directly to an existing project path', async () => {
-    writeTextFileMock.mockResolvedValue(undefined);
-
-    await saveProject('/projects/show.ledstudio', '{"project":true}\n');
-
-    expect(writeTextFileMock).toHaveBeenCalledWith(
-      '/projects/show.ledstudio',
+    await saveProject(
+      { fileName: 'show.ledstudio', handle: 'project-file-1' },
       '{"project":true}\n',
     );
+
+    expect(invokeMock).toHaveBeenCalledWith('save_project', {
+      contents: '{"project":true}\n',
+      handle: 'project-file-1',
+    });
   });
 
-  it('suggests a .ledstudio filename and writes a Save As selection', async () => {
-    saveMock.mockResolvedValue('/projects/my-lighting-show.ledstudio');
-    writeTextFileMock.mockResolvedValue(undefined);
+  it('passes Save As selection and writing to Rust', async () => {
+    const saved = {
+      fileName: 'my-lighting-show.ledstudio',
+      handle: 'project-file-2',
+    };
+    invokeMock.mockResolvedValue(saved);
 
     await expect(
       saveProjectAs('My Lighting Show', '{"project":true}\n'),
-    ).resolves.toEqual({
-      fileName: 'my-lighting-show.ledstudio',
-      path: '/projects/my-lighting-show.ledstudio',
+    ).resolves.toEqual(saved);
+    expect(invokeMock).toHaveBeenCalledWith('save_project_as', {
+      contents: '{"project":true}\n',
+      suggestedName: 'My Lighting Show',
     });
-    expect(saveMock).toHaveBeenCalledWith({
-      defaultPath: 'my-lighting-show.ledstudio',
-      filters: [{ name: 'LED Studio project', extensions: ['ledstudio'] }],
-      title: 'Save LED Studio project',
-    });
-    expect(writeTextFileMock).toHaveBeenCalledWith(
-      '/projects/my-lighting-show.ledstudio',
-      '{"project":true}\n',
-    );
-  });
-
-  it('does not write when Save As is cancelled', async () => {
-    saveMock.mockResolvedValue(null);
-
-    await expect(saveProjectAs('My Show', '{}\n')).resolves.toBeNull();
-    expect(writeTextFileMock).not.toHaveBeenCalled();
-  });
-
-  it.each([
-    ['My Lighting Show', 'my-lighting-show.ledstudio'],
-    ['  already---spaced  ', 'already-spaced.ledstudio'],
-    ['🎸', 'untitled-project.ledstudio'],
-  ])('suggests a safe filename for %j', (name, expected) => {
-    expect(suggestedProjectFileName(name)).toBe(expected);
   });
 
   it.each([
@@ -121,24 +72,27 @@ describe('project file gateway', () => {
     async (response, expected) => {
       messageMock.mockResolvedValue(response);
 
-      await expect(confirmUnsavedProject('My Show')).resolves.toBe(expected);
-      expect(messageMock).toHaveBeenCalledWith(
-        'Do you want to save changes to “My Show” before choosing another project?',
-        {
-          buttons: { yes: 'Save', no: 'Discard', cancel: 'Cancel' },
-          kind: 'warning',
-          title: 'Unsaved project',
-        },
-      );
+      await expect(
+        confirmUnsavedChanges('My Show', 'choose-another'),
+      ).resolves.toBe(expected);
     },
   );
 
-  it('extracts filenames from Windows-style paths', async () => {
-    openMock.mockResolvedValue('C:\\projects\\show.ledstudio');
-    readTextFileMock.mockResolvedValue('{}');
+  it.each([
+    ['choose-another', 'choosing another project'],
+    ['quit', 'quitting LED Studio'],
+  ] as const)('uses intent-specific copy for %s', async (intent, wording) => {
+    messageMock.mockResolvedValue('Cancel');
 
-    await expect(openProject()).resolves.toMatchObject({
-      fileName: 'show.ledstudio',
-    });
+    await confirmUnsavedChanges('My Show', intent);
+
+    expect(messageMock).toHaveBeenCalledWith(
+      `Do you want to save changes to “My Show” before ${wording}?`,
+      {
+        buttons: { yes: 'Save', no: 'Discard', cancel: 'Cancel' },
+        kind: 'warning',
+        title: 'Unsaved project',
+      },
+    );
   });
 });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ProjectSchema,
+  ProjectFormatError,
   createProject,
   parseProject,
   parseProjectJson,
@@ -124,11 +125,33 @@ describe('project creation and JSON parsing', () => {
   });
 
   it('rejects malformed JSON', () => {
-    expect(() => parseProjectJson('{')).toThrow(SyntaxError);
+    expect(() => parseProjectJson('{')).toThrow(
+      expect.objectContaining({ kind: 'invalid-json' }),
+    );
   });
 
   it('rejects valid JSON that is not a project', () => {
-    expect(() => parseProjectJson('{"schemaVersion":1}')).toThrow();
+    expect(() => parseProjectJson('{"schemaVersion":1}')).toThrow(
+      expect.objectContaining({
+        issues: expect.arrayContaining([
+          expect.objectContaining({ path: ['name'] }),
+        ]),
+        kind: 'invalid-project',
+      }),
+    );
+  });
+
+  it('exposes a stable error type without leaking Zod errors', () => {
+    try {
+      parseProject({ ...validProject, palette: { 'Hot Pink': '#FF2B9A' } });
+      throw new Error('Expected parsing to fail');
+    } catch (error) {
+      expect(error).toBeInstanceOf(ProjectFormatError);
+      expect(error).toMatchObject({
+        kind: 'invalid-project',
+        name: 'ProjectFormatError',
+      });
+    }
   });
 
   it('serializes a validated project as formatted JSON', () => {

@@ -3,12 +3,5 @@
   "identifier": "default",
   "description": "Default capabilities for the LED Studio main window",
   "windows": ["main"],
-  "permissions": [
-    "core:default",
-    "dialog:allow-open",
-    "dialog:allow-save",
-    "dialog:allow-message",
-    "fs:allow-read-text-file",
-    "fs:allow-write-text-file"
-  ]
+  "permissions": ["core:default", "dialog:allow-message"]
 }
