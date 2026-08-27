@@ -10,7 +10,7 @@ import {
 } from './projectSession';
 
 const project = createProject({
-  hardwareProfile: 'kms-4-string-31-inlay-v1',
+  hardwareProfile: 'kms-4-string-10-led-v1',
   name: 'Test project',
 });
 
@@ -138,7 +138,7 @@ describe('project session reducer', () => {
     const replacement = createActiveProjectSession(
       createProject({
         name: 'Replacement',
-        hardwareProfile: 'kms-4-string-31-inlay-v1',
+        hardwareProfile: 'kms-4-string-10-led-v1',
       }),
       { kind: 'new' },
       null,

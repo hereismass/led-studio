@@ -22,7 +22,7 @@ No additional global state library is needed while a reducer and controller hook
 
 Playback will be a deterministic engine separate from both the project document and React. It will evaluate scene data at an explicit musical position and produce LED frames without updating React state on every frame. Persisted preview tempo is an editing default; a future external MIDI tempo override will remain transient runtime state.
 
-The 31-element hardware surface remains SVG because it benefits from native accessibility and direct interaction. Dense animation timelines may use Canvas or WebGL when introduced. Work should move to a Web Worker only when profiling shows that evaluation or serialization blocks the UI.
+The 10-LED hardware surface remains SVG because it benefits from native accessibility and direct interaction. Dense animation timelines may use Canvas or WebGL when introduced. Work should move to a Web Worker only when profiling shows that evaluation or serialization blocks the UI.
 
 ## Native boundary
 

@@ -42,7 +42,7 @@ export function ProjectLauncher({
           <span>
             <strong>New project</strong>
             <small>
-              Start with the KMS 31-inlay profile and a white palette colour.
+              Start with the KMS 10-LED profile and a white palette colour.
             </small>
           </span>
           <span className="launcher-card-arrow" aria-hidden="true">

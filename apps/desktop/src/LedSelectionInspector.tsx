@@ -37,9 +37,9 @@ export function LedSelectionInspector({
   return (
     <section className="inspector-section led-inspector">
       <div>
-        <p className="workspace-eyebrow">Inlay selection</p>
+        <p className="workspace-eyebrow">LED selection</p>
         <h3>
-          {leds.length} {leds.length === 1 ? 'inlay' : 'inlays'} selected
+          {leds.length} {leds.length === 1 ? 'LED' : 'LEDs'} selected
         </h3>
         <p className="selection-labels">
           {leds
@@ -90,7 +90,7 @@ export function LedSelectionInspector({
         type="button"
         onClick={onTurnOff}
       >
-        Turn selected inlays off
+        Turn selected LEDs off
       </button>
     </section>
   );

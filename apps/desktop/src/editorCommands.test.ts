@@ -15,7 +15,7 @@ function projectWithPalette(): Project {
   return {
     ...createProject({
       name: 'Test Project',
-      hardwareProfile: 'kms-4-string-31-inlay-v1',
+      hardwareProfile: 'kms-4-string-10-led-v1',
     }),
     palette: [
       { id: HOT_PINK_ID, name: 'Hot Pink', value: '#FF2B9A' },
@@ -158,39 +158,39 @@ describe('editor commands', () => {
     });
     const sceneId = project.scenes[0].id;
     project = applyEditorCommand(project, {
-      ledIds: ['fret-03-primary', 'fret-03-secondary'],
+      ledIds: ['fret-03-e-side', 'fret-12-g-side'],
       paletteTokenId: HOT_PINK_ID,
       sceneId,
       type: 'scene-leds-painted',
     });
-    expect(project.scenes[0].ledStates['fret-03-primary']).toEqual({
+    expect(project.scenes[0].ledStates['fret-03-e-side']).toEqual({
       brightnessPercent: 100,
       paletteTokenId: HOT_PINK_ID,
     });
 
     project = applyEditorCommand(project, {
       brightnessPercent: 40,
-      ledIds: ['fret-03-primary'],
+      ledIds: ['fret-03-e-side'],
       sceneId,
       type: 'scene-led-brightness-set',
     });
     project = applyEditorCommand(project, {
-      ledIds: ['fret-03-primary'],
+      ledIds: ['fret-03-e-side'],
       paletteTokenId: BLACK_ID,
       sceneId,
       type: 'scene-leds-painted',
     });
-    expect(project.scenes[0].ledStates['fret-03-primary']).toEqual({
+    expect(project.scenes[0].ledStates['fret-03-e-side']).toEqual({
       brightnessPercent: 40,
       paletteTokenId: BLACK_ID,
     });
 
     project = applyEditorCommand(project, {
-      ledIds: ['fret-03-primary'],
+      ledIds: ['fret-03-e-side'],
       sceneId,
       type: 'scene-leds-turned-off',
     });
-    expect(project.scenes[0].ledStates['fret-03-primary']).toBeUndefined();
+    expect(project.scenes[0].ledStates['fret-03-e-side']).toBeUndefined();
   });
 
   it('blocks deletion of palette tokens referenced by scenes', () => {
@@ -198,7 +198,7 @@ describe('editor commands', () => {
       type: 'scene-added',
     });
     project = applyEditorCommand(project, {
-      ledIds: ['fret-12-primary', 'fret-12-secondary'],
+      ledIds: ['fret-12-e-side', 'fret-12-g-side'],
       paletteTokenId: HOT_PINK_ID,
       sceneId: project.scenes[0].id,
       type: 'scene-leds-painted',

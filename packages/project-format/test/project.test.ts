@@ -17,7 +17,7 @@ const BLACK_ID = 'f0e1d2c3-b4a5-4678-9abc-def012345678';
 const validProject: Project = {
   schemaVersion: 2,
   name: 'KMS 4-String Bass Example',
-  hardwareProfile: 'kms-4-string-31-inlay-v1',
+  hardwareProfile: 'kms-4-string-10-led-v1',
   palette: [
     { id: HOT_PINK_ID, name: 'Hot Pink', value: '#FF2B9A' },
     {
@@ -145,7 +145,7 @@ describe('ProjectSchema', () => {
     const scene = {
       id: '6c21dc04-9a75-4f10-a7bb-9f17dc2fe32a',
       ledStates: {
-        'fret-03-primary': {
+        'fret-03-e-side': {
           brightnessPercent: 75,
           paletteTokenId: HOT_PINK_ID,
         },
@@ -246,13 +246,13 @@ describe('project creation and JSON parsing', () => {
   it('creates a minimal project with a white palette token', () => {
     const project = createProject({
       name: 'Untitled Project',
-      hardwareProfile: 'kms-4-string-31-inlay-v1',
+      hardwareProfile: 'kms-4-string-10-led-v1',
     });
 
     expect(project).toEqual({
       schemaVersion: 2,
       name: 'Untitled Project',
-      hardwareProfile: 'kms-4-string-31-inlay-v1',
+      hardwareProfile: 'kms-4-string-10-led-v1',
       palette: [
         {
           id: expect.stringMatching(

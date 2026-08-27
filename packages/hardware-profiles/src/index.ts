@@ -10,7 +10,7 @@ export const HardwareLedSchema = z
     fret: z.number().int().positive().optional(),
     id: StableIdSchema,
     label: z.string().trim().min(1),
-    lane: z.enum(['primary', 'secondary']).optional(),
+    lane: StableIdSchema.optional(),
     position: z
       .object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1) })
       .strict(),
@@ -135,15 +135,25 @@ export type HardwareGroup = z.infer<typeof HardwareGroupSchema>;
 export type FretboardLayout = z.infer<typeof FretboardLayoutSchema>;
 export type HardwareProfile = z.infer<typeof HardwareProfileSchema>;
 
-export const KMS_PROFILE_ID = 'kms-4-string-31-inlay-v1' as const;
-export const KMS_MARKER_FRETS = [3, 5, 7, 9, 12, 15, 17, 19, 21] as const;
+export const KMS_PROFILE_ID = 'kms-4-string-10-led-v1' as const;
+export const KMS_E_SIDE_FRETS = [3, 5, 7, 9, 12] as const;
+export const KMS_G_SIDE_FRETS = [12, 15, 17, 19, 21] as const;
 
-function primaryLedId(fret: number): string {
-  return `fret-${String(fret).padStart(2, '0')}-primary`;
-}
+const KMS_LED_CHAIN = [
+  { fret: 21, lane: 'g-side' },
+  { fret: 19, lane: 'g-side' },
+  { fret: 17, lane: 'g-side' },
+  { fret: 15, lane: 'g-side' },
+  { fret: 12, lane: 'g-side' },
+  { fret: 12, lane: 'e-side' },
+  { fret: 9, lane: 'e-side' },
+  { fret: 7, lane: 'e-side' },
+  { fret: 5, lane: 'e-side' },
+  { fret: 3, lane: 'e-side' },
+] as const;
 
-function secondaryLedId(fret: number): string {
-  return `fret-${String(fret).padStart(2, '0')}-secondary`;
+function ledId(fret: number, lane: 'e-side' | 'g-side'): string {
+  return `fret-${String(fret).padStart(2, '0')}-${lane}`;
 }
 
 function createKmsProfile(): HardwareProfile {
@@ -153,58 +163,42 @@ function createKmsProfile(): HardwareProfile {
     const distanceFromNut = 1 - 2 ** (-fret / 12);
     return 1 - distanceFromNut / maximumDistance;
   });
-  const markerFrets = new Set<number>(KMS_MARKER_FRETS);
-  const leds: HardwareLed[] = [];
-
-  for (let fret = 1; fret <= fretCount; fret += 1) {
+  const leds: HardwareLed[] = KMS_LED_CHAIN.map(({ fret, lane }, address) => {
     const x = (fretBoundaries[fret - 1] + fretBoundaries[fret]) / 2;
-    leds.push({
-      address: leds.length,
+    const sideName = lane === 'e-side' ? 'E-side' : 'G-side';
+    return {
+      address,
       fret,
-      id: primaryLedId(fret),
-      label: `Fret ${fret} primary inlay`,
-      lane: 'primary',
-      position: { x, y: 0.42 },
-    });
-    if (markerFrets.has(fret)) {
-      leds.push({
-        address: leds.length,
-        fret,
-        id: secondaryLedId(fret),
-        label: `Fret ${fret} secondary inlay`,
-        lane: 'secondary',
-        position: { x, y: 0.58 },
-      });
-    }
-  }
+      id: ledId(fret, lane),
+      label: `Fret ${fret} ${sideName} LED`,
+      lane,
+      position: { x, y: lane === 'e-side' ? 0.1 : 0.9 },
+    };
+  });
 
-  const primaryIds = leds
-    .filter((led) => led.lane === 'primary')
+  const eSideIds = leds
+    .filter((led) => led.lane === 'e-side')
     .map((led) => led.id);
-  const secondaryIds = leds
-    .filter((led) => led.lane === 'secondary')
-    .map((led) => led.id);
-  const markerIds = leds
-    .filter((led) => led.fret !== undefined && markerFrets.has(led.fret))
+  const gSideIds = leds
+    .filter((led) => led.lane === 'g-side')
     .map((led) => led.id);
 
   return HardwareProfileSchema.parse({
     groups: [
       {
-        id: 'all-inlays',
+        id: 'all-leds',
         ledIds: leds.map((led) => led.id),
-        name: 'All Inlays',
-      },
-      { id: 'primary-inlays', ledIds: primaryIds, name: 'Primary Inlays' },
-      {
-        id: 'secondary-markers',
-        ledIds: secondaryIds,
-        name: 'Secondary Markers',
+        name: 'All LEDs',
       },
       {
-        id: 'all-marker-frets',
-        ledIds: markerIds,
-        name: 'All Marker Frets',
+        id: 'e-side-leds',
+        ledIds: eSideIds,
+        name: 'E-side LEDs',
+      },
+      {
+        id: 'g-side-leds',
+        ledIds: gSideIds,
+        name: 'G-side LEDs',
       },
     ],
     id: KMS_PROFILE_ID,
@@ -216,13 +210,13 @@ function createKmsProfile(): HardwareProfile {
       stringCount: 4,
     },
     leds,
-    name: 'KMS 4-String · 31 Inlays',
+    name: 'KMS 4-String · 10 LEDs',
   });
 }
 
-export const kmsFourString31InlayProfile = createKmsProfile();
+export const kmsFourString10LedProfile = createKmsProfile();
 
-const profiles: readonly HardwareProfile[] = [kmsFourString31InlayProfile];
+const profiles: readonly HardwareProfile[] = [kmsFourString10LedProfile];
 const profileById = new Map(profiles.map((profile) => [profile.id, profile]));
 
 export function listHardwareProfiles(): readonly HardwareProfile[] {

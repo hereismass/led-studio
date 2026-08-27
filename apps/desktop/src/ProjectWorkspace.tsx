@@ -473,7 +473,7 @@ export function ProjectWorkspace({
                 </div>
                 {scenes.length === 0 ? (
                   <p className="asset-empty-copy">
-                    No scenes yet. Add one to begin editing inlays.
+                    No scenes yet. Add one to begin editing LEDs.
                   </p>
                 ) : (
                   <div
@@ -619,7 +619,7 @@ export function ProjectWorkspace({
               </button>
             </div>
           </div>
-          <div className="hardware-groups" aria-label="Inlay selection groups">
+          <div className="hardware-groups" aria-label="LED selection groups">
             {profile.groups.map((group) => (
               <button
                 type="button"
@@ -770,7 +770,7 @@ export function ProjectWorkspace({
                         <dd>{profile.name}</dd>
                       </div>
                       <div>
-                        <dt>Inlays</dt>
+                        <dt>LEDs</dt>
                         <dd>{profile.leds.length}</dd>
                       </div>
                       <div>
@@ -793,7 +793,7 @@ export function ProjectWorkspace({
                   </section>
                   <PanelPlaceholder
                     title="Nothing selected"
-                    description="Select a scene, palette colour, or fretboard inlay to edit it."
+                    description="Select a scene, palette colour, or fretboard LED to edit it."
                   />
                 </>
               )}

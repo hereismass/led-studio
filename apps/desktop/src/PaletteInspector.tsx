@@ -182,7 +182,7 @@ export function PaletteInspector({
       {usageCount > 0 ? (
         <p className="palette-usage-note">
           Used by {usageCount} scene {usageCount === 1 ? 'LED' : 'LEDs'}. Turn
-          those inlays off or apply another colour before deleting.
+          those LEDs off or apply another colour before deleting.
         </p>
       ) : null}
     </section>

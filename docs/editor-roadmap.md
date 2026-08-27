@@ -43,8 +43,8 @@ Implementation complete; the scene workflow and fretboard review gate are open f
 
 - Add an independent hardware-profile registry. Projects continue to store only the profile ID.
 - Define profile geometry using stable LED IDs, physical addresses, normalized coordinates, labels, and built-in groups.
-- Add the 31-inlay KMS profile and validate that its addresses are unique and complete.
-- Render the central hardware surface with SVG initially; 31 elements do not justify Canvas or WebGL yet.
+- Add the 10-LED KMS profile and validate its body-to-neck chain addresses, E-side positions, and G-side positions.
+- Render the central hardware surface with SVG initially; 10 elements do not justify Canvas or WebGL yet.
 - Add reusable static scenes with:
   - stable ID and editable name;
   - a musical loop length in quarter-beat steps;

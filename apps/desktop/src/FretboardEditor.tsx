@@ -284,7 +284,7 @@ export function FretboardEditor({
       </svg>
       {!scene ? (
         <p className="fretboard-empty-hint">
-          Create or select a scene to edit its inlays.
+          Create or select a scene to edit its LEDs.
         </p>
       ) : null}
     </div>

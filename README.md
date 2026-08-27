@@ -2,7 +2,7 @@
 
 The phased editor implementation is tracked in the [editor UI roadmap](docs/editor-roadmap.md).
 
-LED Studio is a Mac-first desktop editor for lighting projects targeting configurable LED hardware. The first hardware profile represents a KMS Thunderbird-style four-string bass with 31 independently addressable RGB inlays, but the project format is intentionally not instrument-specific.
+LED Studio is a Mac-first desktop editor for lighting projects targeting configurable LED hardware. The first hardware profile represents a KMS Thunderbird-style four-string bass with 10 independently addressable RGB LEDs, but the project format is intentionally not instrument-specific.
 
 This repository is a pnpm workspace so it can also contain controller firmware and supporting tools in the future.
 
@@ -33,9 +33,9 @@ The second command starts the Vite development server and opens it in a Tauri wi
 
 On startup, choose to create an untitled project, open and validate a local project, or load a bundled example as an unsaved template. Save atomically replaces the current file, while Save As chooses a new `.ledstudio` destination. New and example-derived projects use Save As for their first save. The app also accepts `.json` files when opening. Closing the window or quitting prompts before discarding unsaved work.
 
-Inside a project, the name, preview BPM, time signature, linked palette colours, and reusable static scenes are editable. New projects start with a white palette token. Palette tokens and scenes have hidden, stable UUIDs. Scene inlays reference palette tokens, store integer brightness percentages, and remain off when no state is present. Project edits support Undo and Redo from the toolbar or with <kbd>⌘Z</kbd> and <kbd>⌘⇧Z</kbd> on macOS.
+Inside a project, the name, preview BPM, time signature, linked palette colours, and reusable static scenes are editable. New projects start with a white palette token. Palette tokens and scenes have hidden, stable UUIDs. Scene LEDs reference palette tokens, store integer brightness percentages, and remain off when no state is present. Project edits support Undo and Redo from the toolbar or with <kbd>⌘Z</kbd> and <kbd>⌘⇧Z</kbd> on macOS.
 
-The KMS profile renders an interactive, physically proportioned four-string fretboard with 31 inlays and built-in selection groups. Scenes loop indefinitely until a future MIDI message changes them; the current Scene Timeline is a static musical ruler and does not play yet.
+The KMS profile renders an interactive, physically proportioned four-string fretboard with 10 LEDs and built-in E-side and G-side selection groups. The electrical chain starts at fret 21 on the G side, crosses to the E side at fret 12, and ends at fret 3. Scenes loop indefinitely until a future MIDI message changes them; the current Scene Timeline is a static musical ruler and does not play yet.
 
 ## Tests and checks
 
@@ -66,7 +66,7 @@ Version 2 contains a schema version, required project name, opaque hardware-prof
 
 Hardware profiles describe LED numbering and physical layout separately; the project format does not embed instrument-specific geometry.
 
-Project files are JSON documents validated at runtime with Zod and use the `.ledstudio` extension. See [`examples/kms-4-string-31-inlay-v1.ledstudio`](examples/kms-4-string-31-inlay-v1.ledstudio).
+Project files are JSON documents validated at runtime with Zod and use the `.ledstudio` extension. See [`examples/kms-4-string-10-led-v1.ledstudio`](examples/kms-4-string-10-led-v1.ledstudio).
 
 ## Deliberately out of scope
 

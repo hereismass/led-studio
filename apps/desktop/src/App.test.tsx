@@ -19,7 +19,7 @@ import type {
 const loadedProject = {
   schemaVersion: 2,
   name: 'Loaded Lighting Show',
-  hardwareProfile: 'kms-4-string-31-inlay-v1',
+  hardwareProfile: 'kms-4-string-10-led-v1',
   palette: [
     {
       id: 'd2c6fe14-65a2-4d79-bf65-aa47e76733de',
@@ -251,30 +251,30 @@ describe('App project launcher and lifecycle', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('selects profile groups and paints inlays from the inspector', async () => {
+  it('selects profile groups and paints LEDs from the inspector', async () => {
     const user = userEvent.setup();
     renderApp();
 
     await user.click(
       screen.getByRole('button', { name: /KMS 4-String Bass Example/i }),
     );
-    await user.click(screen.getByRole('button', { name: /All Inlays.*31/i }));
+    await user.click(screen.getByRole('button', { name: /All LEDs.*10/i }));
     expect(
-      screen.getByRole('heading', { name: '31 inlays selected' }),
+      screen.getByRole('heading', { name: '10 LEDs selected' }),
     ).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Apply Hot Pink' }));
     expect(
       screen.getByRole('button', {
-        name: /Fret 1 primary inlay, address 0, #FF2B9A at 100%/i,
+        name: /Fret 21 G-side LED, address 0, #FF2B9A at 100%/i,
       }),
     ).toBeInTheDocument();
     await user.click(
-      screen.getByRole('button', { name: 'Turn selected inlays off' }),
+      screen.getByRole('button', { name: 'Turn selected LEDs off' }),
     );
     expect(
       screen.getByRole('button', {
-        name: /Fret 1 primary inlay, address 0, off/i,
+        name: /Fret 21 G-side LED, address 0, off/i,
       }),
     ).toBeInTheDocument();
   });

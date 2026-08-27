@@ -1,4 +1,4 @@
-import { kmsFourString31InlayProfile } from '@led-studio/hardware-profiles';
+import { kmsFourString10LedProfile } from '@led-studio/hardware-profiles';
 import type { Scene } from '@led-studio/project-format';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { useState } from 'react';
@@ -21,7 +21,7 @@ function ControlledFretboard({
   return (
     <FretboardEditor
       palette={[]}
-      profile={kmsFourString31InlayProfile}
+      profile={kmsFourString10LedProfile}
       scene={scene}
       selectedLedIds={selectedLedIds}
       onSelectionChange={(ids) => {
@@ -35,8 +35,12 @@ function ControlledFretboard({
 describe('FretboardEditor selection', () => {
   it('supports click, Shift-click, and keyboard selection', () => {
     render(<ControlledFretboard />);
-    const first = screen.getByRole('button', { name: /Fret 1 primary.*off/i });
-    const second = screen.getByRole('button', { name: /Fret 2 primary.*off/i });
+    const first = screen.getByRole('button', {
+      name: /Fret 3 E-side LED.*off/i,
+    });
+    const second = screen.getByRole('button', {
+      name: /Fret 5 E-side LED.*off/i,
+    });
 
     fireEvent.click(first);
     expect(first).toHaveAttribute('aria-pressed', 'true');
@@ -77,7 +81,7 @@ describe('FretboardEditor selection', () => {
     fireEvent.pointerUp(surface, { clientX: 965, clientY: 225, pointerId: 1 });
 
     expect(onChange).toHaveBeenLastCalledWith(
-      kmsFourString31InlayProfile.leds.map((led) => led.id),
+      kmsFourString10LedProfile.leds.map((led) => led.id),
     );
   });
 });
