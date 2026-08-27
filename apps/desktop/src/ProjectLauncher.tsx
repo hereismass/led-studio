@@ -42,7 +42,7 @@ export function ProjectLauncher({
           <span>
             <strong>New project</strong>
             <small>
-              Start with the KMS 10-LED profile and a white palette colour.
+              Start with the KMS 10-LED profile and a ready-to-edit white scene.
             </small>
           </span>
           <span className="launcher-card-arrow" aria-hidden="true">

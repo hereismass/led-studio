@@ -2,9 +2,7 @@
 
 ## Summary
 
-Build the editor through runnable, reviewable milestones. Stop after each milestone for UI feedback before its assumptions spread into later features.
-
-The first milestone changes only the workspace layout. The project format changes once afterward to a forward-compatible development format; existing v1 files will not be migrated.
+Build the editor through runnable, reviewable milestones. Stop after each milestone for UI feedback before its assumptions spread into later features. The active roadmap focuses on scene creation, preview, and animation; show-sequence and external-control work is deferred.
 
 ## Milestones
 
@@ -15,7 +13,7 @@ The first milestone changes only the workspace layout. The project format change
   - left asset panel;
   - central hardware editor area;
   - contextual right inspector;
-  - switchable bottom panel for Show Sequence and Scene Timeline.
+  - a bottom Scene Timeline panel.
 - Keep unavailable features clearly disabled or marked as empty states.
 - Make the side and bottom panels resizable and collapsible, with sensible minimum sizes and a Reset Layout action.
 - Remember layout preferences locally, independently from project JSON.
@@ -55,24 +53,20 @@ Implementation complete; the scene workflow and fretboard review gate are open f
 - Keep the single available profile read-only. When profile switching is introduced, projects containing scenes remain bound until those scenes are removed or migrated explicitly.
 - Review gate: fretboard representation, selection gestures, scene workflow, and inspector organization.
 
-### 4. Show sequence
+### 4. Scene playback and preview
 
-- Revisit the sequence model as an ordered bank of reusable scenes intended for MIDI selection rather than automatic timed progression.
-- Decide MIDI mapping, ordering, deletion safeguards, and whether a separate show/song abstraction is needed before changing the reserved `sequence` collection.
-- Keep renames safe through stable scene IDs and open selected scenes in Scene Timeline mode.
-- Review gate: relationship between scene library order, MIDI triggering, bottom-panel modes, and navigation.
-
-### 5. Playback and transitions
+Implementation complete; the transport and preview review gate is open for feedback.
 
 - Create a pure, UI-independent evaluator that resolves scene LED output at an explicit musical position within its loop.
 - Add preview play, pause, stop, scrub, loop, and current-position controls for a scene.
-- Drive visual refresh with `requestAnimationFrame` and an isolated preview clock while keeping evaluation outside React components.
-- Define how an external MIDI clock overrides the persisted preview BPM without mutating the project.
-- Defer inter-scene transitions until the MIDI-driven scene-switch model is defined.
+- Drive visual refresh with `requestAnimationFrame` and an isolated preview controller while keeping evaluation in a UI-independent package.
 - Display evaluator output on the same hardware surface used for editing.
-- Review gate: transport behavior, timeline feedback, transition semantics, and preview clarity.
+- Make scene edits visible during playback and stop/reset when the active scene changes.
+- Create new projects with a ready-to-edit four-beat scene containing every profile LED in white at full brightness.
+- Keep projects with no scenes valid and disable transport until a scene is created or selected.
+- Review gate: transport behavior, timeline feedback, keyboard control, and preview clarity.
 
-### 6. Effect layers
+### 5. Effect layers
 
 - Extend scenes with ordered, targetable effect layers while retaining their static base state.
 - Start with Pulse and Chase effects to validate temporal and spatial behavior without creating a large effect library.
@@ -82,7 +76,7 @@ Implementation complete; the scene workflow and fretboard review gate are open f
 - Keep evaluation deterministic and define compositing centrally rather than in individual UI components.
 - Review gate: layer model, targeting, ordering, and whether the timeline remains understandable.
 
-### 7. Keyframes and hybrid animation
+### 6. Keyframes and hybrid animation
 
 - Add keyframe layers to the same scene-layer model.
 - Initially support brightness and linked palette-colour tracks.
@@ -91,7 +85,7 @@ Implementation complete; the scene workflow and fretboard review gate are open f
 - Allow effect and keyframe layers to coexist and be reordered under the same evaluator.
 - Review gate: editing precision, inspector/timeline balance, and whether more interpolation or curve tools are justified.
 
-### 8. Workflow and performance polish
+### 7. Workflow and performance polish
 
 - Add keyboard shortcuts, copy/paste, context menus, stronger empty states, validation messaging, and deletion safeguards.
 - Complete accessibility behavior for focus, keyboard selection, labels, and reduced motion.
@@ -99,20 +93,26 @@ Implementation complete; the scene workflow and fretboard review gate are open f
 - Retain SVG and React rendering unless measurements demonstrate a need for Canvas, WebGL, virtualization, or a worker.
 - Document the stable project format and editor architecture once the interaction model has passed review.
 
+## Deferred work
+
+- Revisit the reserved `sequence` collection only after the scene and animation workflow is established.
+- Decide whether sequence order represents a MIDI-selectable scene bank, an automatic show, a song model, or separate concepts before adding UI or persisted data.
+- Define MIDI mapping, external clock behavior, scene-switch transitions, ordering, and deletion safeguards together rather than baking those assumptions into the scene editor now.
+
 ## Interfaces and architecture
 
 - Project-format schemas, profile definitions, editor commands, and playback evaluation remain independent from React and Tauri.
 - React owns workspace presentation and user interaction; Tauri continues to own native dialogs and file persistence.
 - Local workspace preferences use a versioned app-preference key and never enter project files.
 - Format v2 introduces stable IDs and forward-shaped collections. Later milestones add compatible layer and transition variants rather than repeatedly replacing the base format.
-- Scene time uses beat-relative positions. MIDI input, hardware communication, firmware, and export remain out of scope until their dedicated milestones.
+- Scene time uses beat-relative positions. Sequence editing, MIDI input, hardware communication, firmware, and export remain out of scope until their dedicated milestones.
 
 ## Test plan
 
 - Unit-test every schema, referential-integrity rule, editor command, undo/redo operation, profile definition, and playback position boundary.
-- Add component tests for panel behavior, keyboard selection, palette editing, scene operations, sequence reordering, and timeline mode switching.
+- Add component tests for panel behavior, keyboard selection, palette editing, scene operations, playback controls, scrubbing, live preview edits, and zero-scene fallbacks.
 - Round-trip representative v2 projects through save and load after every format-related milestone.
-- Verify malformed files, duplicate IDs, missing references, invalid LED addresses, and invalid transition durations are rejected clearly.
+- Verify malformed files, duplicate IDs, missing references, invalid LED addresses, and invalid playback inputs are rejected clearly.
 - Run the existing TypeScript, React, Rust, and native macOS checks at every review gate.
 - Manually smoke-test welcome, create, example loading, open, save, save-as, close protection, and restored panel layout.
 

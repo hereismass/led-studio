@@ -9,6 +9,7 @@ import {
 import {
   HardwareCompatibilityError,
   KMS_PROFILE_ID,
+  getHardwareProfile,
   validateProjectHardwareReferences,
 } from '@led-studio/hardware-profiles';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -434,10 +435,20 @@ export function useProjectSession({
       return;
     }
 
+    const profile = getHardwareProfile(DEFAULT_HARDWARE_PROFILE);
+    if (!profile) {
+      dispatch({
+        error: 'The default hardware profile is not available in this build.',
+        type: 'launcher-error',
+      });
+      return;
+    }
+
     dispatch({
       activeProject: createActiveProjectSession(
         createProject({
           hardwareProfile: DEFAULT_HARDWARE_PROFILE,
+          initialSceneLedIds: profile.leds.map((led) => led.id),
           name: 'Untitled Project',
         }),
         { kind: 'new' },

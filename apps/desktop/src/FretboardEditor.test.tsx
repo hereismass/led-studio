@@ -1,4 +1,5 @@
 import { kmsFourString10LedProfile } from '@led-studio/hardware-profiles';
+import { evaluateSceneFrame } from '@led-studio/playback';
 import type { Scene } from '@led-studio/project-format';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { useState } from 'react';
@@ -20,7 +21,7 @@ function ControlledFretboard({
   const [selectedLedIds, setSelectedLedIds] = useState<string[]>([]);
   return (
     <FretboardEditor
-      palette={[]}
+      frame={evaluateSceneFrame(scene, [], kmsFourString10LedProfile, 0)}
       profile={kmsFourString10LedProfile}
       scene={scene}
       selectedLedIds={selectedLedIds}

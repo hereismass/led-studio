@@ -8,10 +8,12 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 import { paletteTokenUsageCount, type EditorCommand } from './editorCommands';
-import { FretboardEditor } from './FretboardEditor';
 import { LedSelectionInspector } from './LedSelectionInspector';
 import { PaletteInspector } from './PaletteInspector';
+import { PlaybackControls } from './PlaybackControls';
+import { PreviewPlaybackController } from './previewPlayback';
 import { ProjectTitleEditor } from './ProjectTitleEditor';
+import { SceneFretboard } from './SceneFretboard';
 import { SceneInspector } from './SceneInspector';
 import { SceneTimeline } from './SceneTimeline';
 import { TimingControls } from './TimingControls';
@@ -28,7 +30,6 @@ import {
   saveWorkspaceLayout,
 } from './workspaceLayout';
 
-type BottomPanel = 'scene' | 'show';
 type ResizablePanel = 'bottom' | 'left' | 'right';
 type InspectorTarget =
   | { kind: 'leds' }
@@ -97,9 +98,6 @@ export function ProjectWorkspace({
   const [activeSceneId, setActiveSceneId] = useState<string | null>(
     initialSceneId,
   );
-  const [bottomPanel, setBottomPanel] = useState<BottomPanel>(
-    initialSceneId ? 'scene' : 'show',
-  );
   const [focusTokenId, setFocusTokenId] = useState<string | null>(null);
   const [inspectorTarget, setInspectorTarget] = useState<InspectorTarget>(
     initialSceneId
@@ -113,6 +111,11 @@ export function ProjectWorkspace({
     kind: 'palette' | 'scene';
   } | null>(null);
   const stopResizeRef = useRef<(() => void) | null>(null);
+  const previewControllerRef = useRef<PreviewPlaybackController | null>(null);
+  if (!previewControllerRef.current) {
+    previewControllerRef.current = new PreviewPlaybackController();
+  }
+  const previewController = previewControllerRef.current;
 
   const activeScene =
     scenes.find((scene) => scene.id === activeSceneId) ?? null;
@@ -130,6 +133,37 @@ export function ProjectWorkspace({
 
   useEffect(() => saveWorkspaceLayout(layout), [layout]);
   useEffect(() => () => stopResizeRef.current?.(), []);
+  useEffect(() => () => previewController.stop(), [previewController]);
+  useEffect(() => {
+    previewController.configure({
+      beatsPerMinute: project.timing.previewBpm,
+      loopLengthBeats: activeScene?.loopLengthBeats ?? 4,
+      sceneId: activeScene?.id ?? null,
+    });
+  }, [
+    activeScene?.id,
+    activeScene?.loopLengthBeats,
+    previewController,
+    project.timing.previewBpm,
+  ]);
+  useEffect(() => {
+    function handlePlaybackShortcut(event: KeyboardEvent) {
+      if (event.code !== 'Space' || event.repeat || event.defaultPrevented)
+        return;
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        target.closest(
+          'input, select, textarea, button, a, [contenteditable="true"]',
+        )
+      )
+        return;
+      event.preventDefault();
+      previewController.toggle();
+    }
+    window.addEventListener('keydown', handlePlaybackShortcut);
+    return () => window.removeEventListener('keydown', handlePlaybackShortcut);
+  }, [previewController]);
   useEffect(() => {
     const pending = pendingEntityIdsRef.current;
     if (pending) {
@@ -144,7 +178,6 @@ export function ProjectWorkspace({
           setActiveSceneId(added.id);
           setInspectorTarget({ id: added.id, kind: 'scene' });
           setSelectedLedIds([]);
-          setBottomPanel('scene');
         }
         return;
       }
@@ -182,7 +215,6 @@ export function ProjectWorkspace({
     setActiveSceneId(scene.id);
     setInspectorTarget({ id: scene.id, kind: 'scene' });
     setSelectedLedIds([]);
-    setBottomPanel('scene');
   }
 
   function deleteScene(scene: Scene) {
@@ -338,22 +370,10 @@ export function ProjectWorkspace({
           className="workspace-transport"
           aria-label="Preview timing and playback controls"
         >
-          <button
-            type="button"
-            disabled
-            title="Playback arrives in a later milestone"
-          >
-            <span aria-hidden="true">■</span>
-            <span className="visually-hidden">Stop</span>
-          </button>
-          <button
-            type="button"
-            disabled
-            title="Playback arrives in a later milestone"
-          >
-            <span aria-hidden="true">▶</span>
-            <span className="visually-hidden">Play</span>
-          </button>
+          <PlaybackControls
+            controller={previewController}
+            disabled={!activeScene}
+          />
           <TimingControls
             timing={project.timing}
             onCommit={(changes) =>
@@ -633,7 +653,8 @@ export function ProjectWorkspace({
             ))}
           </div>
           <div className="hardware-stage">
-            <FretboardEditor
+            <SceneFretboard
+              controller={previewController}
               palette={colours}
               profile={profile}
               scene={activeScene}
@@ -817,27 +838,8 @@ export function ProjectWorkspace({
           className={`timeline-panel ${layout.bottomCollapsed ? 'timeline-panel-collapsed' : ''}`}
           aria-label="Timeline"
         >
-          <div
-            className="timeline-tabs"
-            role="tablist"
-            aria-label="Timeline mode"
-          >
-            <button
-              type="button"
-              role="tab"
-              aria-selected={bottomPanel === 'show'}
-              onClick={() => setBottomPanel('show')}
-            >
-              Show sequence
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={bottomPanel === 'scene'}
-              onClick={() => setBottomPanel('scene')}
-            >
-              Scene timeline
-            </button>
+          <div className="timeline-tabs">
+            <strong>Scene timeline</strong>
             <button
               className="timeline-collapse-button"
               type="button"
@@ -856,21 +858,18 @@ export function ProjectWorkspace({
             <div
               className="timeline-content"
               role="tabpanel"
-              aria-label={
-                bottomPanel === 'show' ? 'Show sequence' : 'Scene timeline'
-              }
+              aria-label="Scene timeline"
             >
-              {bottomPanel === 'show' ? (
-                <PanelPlaceholder
-                  title="MIDI scene order will live here"
-                  description="Automatic timed progression is deliberately deferred while MIDI triggering is designed."
+              {activeScene ? (
+                <SceneTimeline
+                  controller={previewController}
+                  scene={activeScene}
+                  timing={project.timing}
                 />
-              ) : activeScene ? (
-                <SceneTimeline scene={activeScene} timing={project.timing} />
               ) : (
                 <PanelPlaceholder
                   title="Select a scene to view its loop"
-                  description="Scenes loop until a future MIDI scene-change message."
+                  description="Create or select a scene to use preview playback."
                 />
               )}
             </div>

@@ -18,9 +18,13 @@ Workspace panel sizes and collapsed state are versioned local application prefer
 
 No additional global state library is needed while a reducer and controller hook provide a clear state transition boundary.
 
-## Future playback and rendering
+## Playback and rendering
 
-Playback will be a deterministic engine separate from both the project document and React. It will evaluate scene data at an explicit musical position and produce LED frames without updating React state on every frame. Persisted preview tempo is an editing default; a future external MIDI tempo override will remain transient runtime state.
+`packages/playback` owns deterministic loop timing and scene evaluation. Given a scene, palette, hardware profile, and explicit musical position, it produces a complete LED frame without depending on React, Tauri, or wall-clock time.
+
+The desktop preview controller owns the transient clock and transport state. It advances with `requestAnimationFrame` and exposes an external subscription store, so only the timeline and hardware-preview adapters refresh while playback runs. Play, pause, stop, and seek never create project revisions. Project tempo and scene-loop edits reconfigure the running preview without restarting its phase; selecting another scene stops and resets it.
+
+The current evaluator is intentionally static at every loop position. Future effect and keyframe variants can extend deterministic evaluation without moving timing rules into UI components. Persisted preview tempo remains an editing default; any future external tempo override must remain transient runtime state.
 
 The 10-LED hardware surface remains SVG because it benefits from native accessibility and direct interaction. Dense animation timelines may use Canvas or WebGL when introduced. Work should move to a Web Worker only when profiling shows that evaluation or serialization blocks the UI.
 

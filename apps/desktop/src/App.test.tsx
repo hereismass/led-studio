@@ -7,7 +7,7 @@ import {
   within,
 } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
 import type { AppLifecycleGateway } from './appLifecycle';
 import { projectExamples } from './examples';
@@ -31,6 +31,16 @@ const loadedProject = {
   sequence: [],
   groups: [],
 };
+
+afterEach(() => vi.unstubAllGlobals());
+
+function stubAnimationFrames() {
+  vi.stubGlobal(
+    'requestAnimationFrame',
+    vi.fn(() => 1),
+  );
+  vi.stubGlobal('cancelAnimationFrame', vi.fn());
+}
 
 function openedProjectFile() {
   return {
@@ -227,27 +237,42 @@ describe('App project launcher and lifecycle', () => {
     await waitFor(() => expect(electricGreen).toHaveFocus());
   });
 
-  it('creates and duplicates looping scenes with timeline feedback', async () => {
+  it('starts with a lit default scene and manages additional scenes', async () => {
     const user = userEvent.setup();
     renderApp();
 
     await user.click(screen.getByRole('button', { name: /new project/i }));
-    await user.click(screen.getByRole('button', { name: 'Add scene' }));
-
     expect(
       await screen.findByRole('option', { name: /Scene 1.*4 beats/i }),
     ).toHaveAttribute('aria-selected', 'true');
     expect(
+      screen.getByRole('option', { name: /Scene 1.*10 lit/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', {
+        name: /Fret 21 G-side LED, address 0, #FFFFFF at 100%/i,
+      }),
+    ).toBeInTheDocument();
+    expect(
       screen.getByRole('tabpanel', { name: 'Scene timeline' }),
     ).toHaveTextContent('Loop · 4 beats · 1 bar · 120 BPM · 4/4');
+    expect(
+      screen
+        .getByRole('slider', { name: 'Scene preview position' })
+        .closest('.scene-ruler'),
+    ).toHaveStyle({ minWidth: '480px', width: '100%' });
 
+    await user.click(screen.getByRole('button', { name: 'Add scene' }));
+    expect(
+      await screen.findByRole('option', { name: /Scene 2.*0 lit/i }),
+    ).toHaveAttribute('aria-selected', 'true');
     await user.click(screen.getByRole('button', { name: 'Duplicate' }));
     expect(
-      await screen.findByRole('option', { name: /Scene 1 Copy.*4 beats/i }),
+      await screen.findByRole('option', { name: /Scene 2 Copy.*4 beats/i }),
     ).toHaveAttribute('aria-selected', 'true');
     await user.click(screen.getByRole('button', { name: 'Delete' }));
     expect(
-      screen.queryByRole('option', { name: /Scene 1 Copy/i }),
+      screen.queryByRole('option', { name: /Scene 2 Copy/i }),
     ).not.toBeInTheDocument();
   });
 
@@ -306,7 +331,9 @@ describe('App project launcher and lifecycle', () => {
     expect(screen.getByRole('spinbutton', { name: 'Preview BPM' })).toHaveValue(
       96,
     );
-    expect(screen.getByText('96 BPM · 6/8')).toBeInTheDocument();
+    expect(
+      screen.getByRole('tabpanel', { name: 'Scene timeline' }),
+    ).toHaveTextContent('96 BPM · 6/8');
 
     await user.click(screen.getByRole('button', { name: 'Undo' }));
     expect(
@@ -316,6 +343,85 @@ describe('App project launcher and lifecycle', () => {
     expect(numerator).toHaveValue(4);
     await user.click(screen.getByRole('button', { name: 'Redo' }));
     expect(numerator).toHaveValue(6);
+  });
+
+  it('plays, pauses, seeks, and stops the active scene preview', async () => {
+    stubAnimationFrames();
+    const user = userEvent.setup();
+    renderApp();
+    await user.click(screen.getByRole('button', { name: /new project/i }));
+
+    const stop = screen.getByRole('button', { name: 'Stop' });
+    expect(stop).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'Play' }));
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument();
+    expect(stop).toBeEnabled();
+
+    const scrubber = screen.getByRole('slider', {
+      name: 'Scene preview position',
+    });
+    fireEvent.change(scrubber, { target: { value: '2.5' } });
+    expect(scrubber).toHaveValue('2.5');
+    expect(
+      screen.getByRole('tabpanel', { name: 'Scene timeline' }),
+    ).toHaveTextContent('Position 2.5 / 4 beats · playing');
+
+    await user.click(screen.getByRole('button', { name: 'Pause' }));
+    const pausedPosition = Number(scrubber.getAttribute('value'));
+    fireEvent.keyDown(scrubber, { key: 'ArrowRight' });
+    expect(Number(scrubber.getAttribute('value'))).toBeCloseTo(
+      pausedPosition + 0.25,
+    );
+    fireEvent.keyDown(scrubber, { key: 'Home' });
+    expect(scrubber).toHaveValue('0');
+    await user.click(stop);
+    expect(stop).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument();
+  });
+
+  it('supports Space playback, live edits, and scene-switch reset', async () => {
+    stubAnimationFrames();
+    const user = userEvent.setup();
+    renderApp();
+    await user.click(screen.getByRole('button', { name: /new project/i }));
+
+    fireEvent.keyDown(window, { code: 'Space', key: ' ' });
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /E-side LEDs.*5/i }));
+    await user.click(
+      screen.getByRole('button', { name: 'Turn selected LEDs off' }),
+    );
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument();
+
+    const bpm = screen.getByRole('spinbutton', { name: 'Preview BPM' });
+    fireEvent.keyDown(bpm, { code: 'Space', key: ' ' });
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Add scene' }));
+    expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Stop' })).toBeDisabled();
+    expect(
+      screen.getByRole('slider', { name: 'Scene preview position' }),
+    ).toHaveValue('0');
+  });
+
+  it('disables playback when an opened project has no scenes', async () => {
+    const user = userEvent.setup();
+    const projectStorage = createProjectStorage({
+      openProject: vi.fn().mockResolvedValue(openedProjectFile()),
+    });
+    renderApp({ projectStorage });
+
+    await user.click(screen.getByRole('button', { name: /open project/i }));
+
+    expect(screen.getByRole('button', { name: 'Play' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Stop' })).toBeDisabled();
+    expect(
+      screen.getByRole('tabpanel', { name: 'Scene timeline' }),
+    ).toHaveTextContent('Create or select a scene to use preview playback.');
+    expect(
+      screen.queryByRole('slider', { name: 'Scene preview position' }),
+    ).not.toBeInTheDocument();
   });
 
   it('opens a switchable editor workspace with collapsible panels', async () => {
@@ -330,10 +436,10 @@ describe('App project launcher and lifecycle', () => {
     expect(
       screen.getByRole('complementary', { name: 'Inspector' }),
     ).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Show sequence' })).toHaveAttribute(
-      'aria-selected',
-      'true',
-    );
+    expect(
+      screen.queryByRole('tab', { name: 'Show sequence' }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText('Scene timeline')).toBeInTheDocument();
 
     const assetsResizer = screen.getByRole('separator', {
       name: 'Resize assets panel',
@@ -341,10 +447,9 @@ describe('App project launcher and lifecycle', () => {
     fireEvent.keyDown(assetsResizer, { key: 'ArrowRight' });
     expect(assetsResizer).toHaveAttribute('aria-valuenow', '244');
 
-    await user.click(screen.getByRole('tab', { name: 'Scene timeline' }));
     expect(
       screen.getByRole('tabpanel', { name: 'Scene timeline' }),
-    ).toHaveTextContent('Select a scene to view its loop');
+    ).toHaveTextContent('Scene 1');
 
     await user.click(
       screen.getByRole('button', { name: 'Collapse assets panel' }),

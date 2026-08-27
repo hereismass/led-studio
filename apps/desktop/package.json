@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@led-studio/hardware-profiles": "workspace:*",
+    "@led-studio/playback": "workspace:*",
     "@led-studio/project-format": "workspace:*",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-dialog": "^2.7.2",

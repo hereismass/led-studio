@@ -1,5 +1,6 @@
 import type { HardwareProfile } from '@led-studio/hardware-profiles';
-import type { PaletteToken, Scene } from '@led-studio/project-format';
+import type { LedFrame } from '@led-studio/playback';
+import type { Scene } from '@led-studio/project-format';
 import { useState, type KeyboardEvent, type PointerEvent } from 'react';
 
 const VIEWBOX_WIDTH = 1000;
@@ -21,7 +22,7 @@ interface Marquee {
 }
 
 interface FretboardEditorProps {
-  palette: PaletteToken[];
+  frame: LedFrame;
   profile: HardwareProfile;
   scene: Scene | null;
   selectedLedIds: string[];
@@ -48,15 +49,15 @@ function ledPoint(position: { x: number; y: number }): Point {
 }
 
 export function FretboardEditor({
+  frame,
   onSelectionChange,
-  palette,
   profile,
   scene,
   selectedLedIds,
 }: FretboardEditorProps) {
   const [marquee, setMarquee] = useState<Marquee | null>(null);
   const selected = new Set(selectedLedIds);
-  const colours = new Map(palette.map((token) => [token.id, token.value]));
+  const output = new Map(frame.map((led) => [led.ledId, led]));
   const interactive = scene !== null;
 
   function selectLed(id: string, additive: boolean) {
@@ -227,12 +228,13 @@ export function FretboardEditor({
         />
         {profile.leds.map((led) => {
           const point = ledPoint(led.position);
-          const state = scene?.ledStates[led.id];
-          const colour = state
-            ? (colours.get(state.paletteTokenId) ?? '#FFFFFF')
-            : '#5D5663';
-          const label = state
-            ? `${led.label}, address ${led.address}, ${colour} at ${state.brightnessPercent}%`
+          const state = output.get(led.id);
+          const lit = Boolean(
+            state && state.colour && state.brightnessPercent > 0,
+          );
+          const colour = state?.colour ?? '#5D5663';
+          const label = lit
+            ? `${led.label}, address ${led.address}, ${colour} at ${state!.brightnessPercent}%`
             : `${led.label}, address ${led.address}, off`;
           return (
             <g
@@ -249,14 +251,14 @@ export function FretboardEditor({
               onKeyDown={(event) => handleLedKey(event, led.id)}
             >
               <title>{label}</title>
-              {state ? (
+              {lit ? (
                 <circle
                   className="fretboard-led-glow"
                   cx={point.x}
                   cy={point.y}
                   r="10"
                   fill={colour}
-                  opacity={0.15 + state.brightnessPercent / 125}
+                  opacity={0.15 + state!.brightnessPercent / 125}
                 />
               ) : null}
               <circle
@@ -271,9 +273,7 @@ export function FretboardEditor({
                 cy={point.y}
                 r="7"
                 fill={colour}
-                fillOpacity={
-                  state ? 0.28 + state.brightnessPercent / 139 : 0.16
-                }
+                fillOpacity={lit ? 0.28 + state!.brightnessPercent / 139 : 0.16}
               />
             </g>
           );

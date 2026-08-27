@@ -17,6 +17,9 @@ importers:
       '@led-studio/hardware-profiles':
         specifier: workspace:*
         version: link:../../packages/hardware-profiles
+      '@led-studio/playback':
+        specifier: workspace:*
+        version: link:../../packages/playback
       '@led-studio/project-format':
         specifier: workspace:*
         version: link:../../packages/project-format
@@ -72,6 +75,22 @@ importers:
       zod:
         specifier: ^4.4.3
         version: 4.4.3
+    devDependencies:
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+      vitest:
+        specifier: ^4.1.11
+        version: 4.1.11(jsdom@30.0.1)(vite@8.2.2)
+
+  packages/playback:
+    dependencies:
+      '@led-studio/hardware-profiles':
+        specifier: workspace:*
+        version: link:../hardware-profiles
+      '@led-studio/project-format':
+        specifier: workspace:*
+        version: link:../project-format
     devDependencies:
       typescript:
         specifier: ^7.0.2

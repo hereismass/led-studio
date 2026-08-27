@@ -192,6 +192,7 @@ export class ProjectFormatError extends Error {
 }
 
 export interface CreateProjectInput {
+  initialSceneLedIds?: readonly string[];
   name: string;
   hardwareProfile: string;
 }
@@ -273,21 +274,35 @@ export function serializeProject(project: Project): string {
 }
 
 export function createProject({
+  initialSceneLedIds = [],
   name,
   hardwareProfile,
 }: CreateProjectInput): Project {
+  const whiteTokenId = generateProjectEntityId();
   return parseProject({
     schemaVersion: PROJECT_SCHEMA_VERSION,
     name,
     hardwareProfile,
     palette: [
       {
-        id: generateProjectEntityId(),
+        id: whiteTokenId,
         name: 'White',
         value: '#FFFFFF',
       },
     ],
-    scenes: [],
+    scenes: [
+      {
+        id: generateProjectEntityId(),
+        ledStates: Object.fromEntries(
+          initialSceneLedIds.map((ledId) => [
+            ledId,
+            { brightnessPercent: 100, paletteTokenId: whiteTokenId },
+          ]),
+        ),
+        loopLengthBeats: 4,
+        name: 'Scene 1',
+      },
+    ],
     sequence: [],
     groups: [],
     timing: DEFAULT_PROJECT_TIMING,

@@ -243,7 +243,7 @@ describe('ProjectSchema', () => {
 });
 
 describe('project creation and JSON parsing', () => {
-  it('creates a minimal project with a white palette token', () => {
+  it('creates a project with a white palette token and default scene', () => {
     const project = createProject({
       name: 'Untitled Project',
       hardwareProfile: 'kms-4-string-10-led-v1',
@@ -262,13 +262,36 @@ describe('project creation and JSON parsing', () => {
           value: '#FFFFFF',
         },
       ],
-      scenes: [],
+      scenes: [
+        {
+          id: expect.stringMatching(
+            /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+          ),
+          ledStates: {},
+          loopLengthBeats: 4,
+          name: 'Scene 1',
+        },
+      ],
       sequence: [],
       groups: [],
       timing: {
         previewBpm: 120,
         timeSignature: { denominator: 4, numerator: 4 },
       },
+    });
+  });
+
+  it('lights supplied default-scene LEDs with the generated white token', () => {
+    const project = createProject({
+      hardwareProfile: 'kms-4-string-10-led-v1',
+      initialSceneLedIds: ['led-0', 'led-1'],
+      name: 'Untitled Project',
+    });
+    const whiteTokenId = project.palette[0].id;
+
+    expect(project.scenes[0].ledStates).toEqual({
+      'led-0': { brightnessPercent: 100, paletteTokenId: whiteTokenId },
+      'led-1': { brightnessPercent: 100, paletteTokenId: whiteTokenId },
     });
   });
 

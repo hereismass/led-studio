@@ -21,6 +21,7 @@ function projectWithPalette(): Project {
       { id: HOT_PINK_ID, name: 'Hot Pink', value: '#FF2B9A' },
       { id: BLACK_ID, name: 'Black', value: '#000000' },
     ],
+    scenes: [],
   };
 }
 
