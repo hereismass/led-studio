@@ -1,4 +1,5 @@
-import { createProject } from '@led-studio/project-format';
+import { createDefaultProject } from '@led-studio/editor-core';
+import { kmsFourString10LedProfile } from '@led-studio/hardware-profiles';
 import { describe, expect, it } from 'vitest';
 import {
   createActiveProjectSession,
@@ -9,9 +10,9 @@ import {
   type ProjectSessionState,
 } from './projectSession';
 
-const project = createProject({
-  hardwareProfile: 'kms-4-string-10-led-v1',
+const project = createDefaultProject({
   name: 'Test project',
+  profile: kmsFourString10LedProfile,
 });
 
 function activeProject(savedRevision: number | null = 0): ActiveProjectSession {
@@ -136,9 +137,9 @@ describe('project session reducer', () => {
   it('replaces all history when another project is activated', () => {
     const edited = rename(stateWith(activeProject()), 'Edited project');
     const replacement = createActiveProjectSession(
-      createProject({
+      createDefaultProject({
         name: 'Replacement',
-        hardwareProfile: 'kms-4-string-10-led-v1',
+        profile: kmsFourString10LedProfile,
       }),
       { kind: 'new' },
       null,

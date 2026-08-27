@@ -66,7 +66,20 @@ Implementation complete; the transport and preview review gate is open for feedb
 - Keep projects with no scenes valid and disable transport until a scene is created or selected.
 - Review gate: transport behavior, timeline feedback, keyboard control, and preview clarity.
 
+### 4.1. Editor architecture hardening
+
+Implementation complete.
+
+- Extract project creation, editor commands, and history into a reusable `editor-core` package.
+- Keep history bounded to 200 revisions and group continuous slider or colour-picker updates into one undo step.
+- Make entity-creation commands carry their generated IDs so selection does not depend on comparing collections after render.
+- Compile scene evaluation once and isolate animation-frame subscriptions to moving playback UI.
+- Split workspace layout, selection, preview lifecycle, toolbar, assets, timeline, and resizers into focused components and hooks.
+- Preserve the active session behind a workspace error boundary with Retry, Save As, and Return actions.
+
 ### 5. Effect layers
+
+Implementation complete; the layer, targeting, and timeline review gate is open for feedback.
 
 - Extend scenes with ordered, targetable effect layers while retaining their static base state.
 - Start with Pulse and Chase effects to validate temporal and spatial behavior without creating a large effect library.
@@ -74,6 +87,9 @@ Implementation complete; the transport and preview review gate is open for feedb
 - Add layer rows and duration bars to the Scene Timeline, with editing in the contextual inspector.
 - Add user-defined LED groups now that reusable animation targeting needs them.
 - Keep evaluation deterministic and define compositing centrally rather than in individual UI components.
+- Pulse supports waveform and phase shaping. Chase supports direction, head width, and a fading trail.
+- Custom groups are project-wide linked assets; changing their members updates every layer that targets them.
+- Layer bars support quarter-beat drag, resize, keyboard adjustment, exact inspector values, ordering, locking, and grouped undo.
 - Review gate: layer model, targeting, ordering, and whether the timeline remains understandable.
 
 ### 6. Keyframes and hybrid animation
@@ -104,7 +120,7 @@ Implementation complete; the transport and preview review gate is open for feedb
 - Project-format schemas, profile definitions, editor commands, and playback evaluation remain independent from React and Tauri.
 - React owns workspace presentation and user interaction; Tauri continues to own native dialogs and file persistence.
 - Local workspace preferences use a versioned app-preference key and never enter project files.
-- Format v2 introduces stable IDs and forward-shaped collections. Later milestones add compatible layer and transition variants rather than repeatedly replacing the base format.
+- Format v2 remains the active development format and may change without migration until a compatibility policy is explicitly introduced.
 - Scene time uses beat-relative positions. Sequence editing, MIDI input, hardware communication, firmware, and export remain out of scope until their dedicated milestones.
 
 ## Test plan

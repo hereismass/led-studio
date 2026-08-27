@@ -1,5 +1,5 @@
 import type { PreviewPlaybackController } from './previewPlayback';
-import { usePreviewPlaybackSnapshot } from './usePreviewPlaybackSnapshot';
+import { usePreviewPlaybackStatus } from './usePreviewPlaybackSnapshot';
 
 interface PlaybackControlsProps {
   controller: PreviewPlaybackController;
@@ -10,14 +10,14 @@ export function PlaybackControls({
   controller,
   disabled,
 }: PlaybackControlsProps) {
-  const playback = usePreviewPlaybackSnapshot(controller);
-  const playing = playback.status === 'playing';
+  const status = usePreviewPlaybackStatus(controller);
+  const playing = status === 'playing';
   return (
     <div className="playback-controls" aria-label="Scene preview controls">
       <button
         type="button"
         aria-label="Stop"
-        disabled={disabled || playback.status === 'stopped'}
+        disabled={disabled || status === 'stopped'}
         onClick={() => controller.stop()}
       >
         <span aria-hidden="true">■</span>

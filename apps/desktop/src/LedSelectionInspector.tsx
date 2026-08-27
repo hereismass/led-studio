@@ -1,12 +1,17 @@
 import type { HardwareLed } from '@led-studio/hardware-profiles';
 import type { PaletteToken, Scene } from '@led-studio/project-format';
+import type { ExecuteEditorCommandOptions } from '@led-studio/editor-core';
 import { useEffect, useState } from 'react';
+import { useRafGroupedInteraction } from './useRafGroupedInteraction';
 
 interface LedSelectionInspectorProps {
   leds: HardwareLed[];
   palette: PaletteToken[];
   scene: Scene;
-  onBrightnessChange: (value: number) => void;
+  onBrightnessChange: (
+    value: number,
+    options?: ExecuteEditorCommandOptions,
+  ) => void;
   onPaint: (paletteTokenId: string) => void;
   onTurnOff: () => void;
 }
@@ -28,6 +33,9 @@ export function LedSelectionInspector({
   const brightness =
     brightnesses.size === 1 ? (litStates[0]?.brightnessPercent ?? 100) : 100;
   const [draft, setDraft] = useState(brightness);
+  const brightnessInteraction = useRafGroupedInteraction(
+    (value: number, options) => onBrightnessChange(value, options),
+  );
 
   useEffect(
     () => setDraft(brightness),
@@ -80,9 +88,45 @@ export function LedSelectionInspector({
           max="100"
           value={draft}
           disabled={litStates.length === 0}
-          onChange={(event) => setDraft(Number(event.target.value))}
-          onPointerUp={() => onBrightnessChange(draft)}
-          onKeyUp={() => onBrightnessChange(draft)}
+          onBlur={brightnessInteraction.end}
+          onChange={(event) => {
+            const value = Number(event.target.value);
+            setDraft(value);
+            brightnessInteraction.update(value);
+          }}
+          onKeyDown={(event) => {
+            if (
+              [
+                'ArrowDown',
+                'ArrowLeft',
+                'ArrowRight',
+                'ArrowUp',
+                'End',
+                'Home',
+                'PageDown',
+                'PageUp',
+              ].includes(event.key)
+            )
+              brightnessInteraction.begin();
+          }}
+          onKeyUp={(event) => {
+            if (
+              [
+                'ArrowDown',
+                'ArrowLeft',
+                'ArrowRight',
+                'ArrowUp',
+                'End',
+                'Home',
+                'PageDown',
+                'PageUp',
+              ].includes(event.key)
+            )
+              brightnessInteraction.end();
+          }}
+          onPointerCancel={brightnessInteraction.end}
+          onPointerDown={brightnessInteraction.begin}
+          onPointerUp={brightnessInteraction.end}
         />
       </label>
       <button

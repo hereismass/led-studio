@@ -49,6 +49,16 @@ export function SceneInspector({
       setError('Use a positive loop length in 0.25-beat steps');
       return;
     }
+    const minimumForLayers = scene.layers.reduce(
+      (maximum, layer) => Math.max(maximum, layer.endBeat),
+      0.25,
+    );
+    if (value < minimumForLayers) {
+      setError(
+        `This scene has an effect ending at beat ${minimumForLayers}. Move or resize it first.`,
+      );
+      return;
+    }
     setLoopLength(String(value));
     setError(null);
     onUpdate({ loopLengthBeats: value });

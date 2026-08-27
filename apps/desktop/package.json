@@ -11,6 +11,7 @@
     "tauri": "tauri"
   },
   "dependencies": {
+    "@led-studio/editor-core": "workspace:*",
     "@led-studio/hardware-profiles": "workspace:*",
     "@led-studio/playback": "workspace:*",
     "@led-studio/project-format": "workspace:*",

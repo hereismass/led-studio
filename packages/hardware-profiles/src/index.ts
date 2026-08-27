@@ -235,8 +235,19 @@ export class HardwareCompatibilityError extends Error {
 }
 
 interface HardwareBoundProject {
+  groups?: Array<{ id: string; ledIds: string[]; name: string }>;
   hardwareProfile: string;
-  scenes: Array<{ ledStates: Record<string, unknown>; name: string }>;
+  scenes: Array<{
+    layers?: Array<{
+      name: string;
+      target:
+        | { kind: 'leds'; ledIds: string[] }
+        | { kind: 'profile-group'; groupId: string }
+        | { kind: 'project-group'; groupId: string };
+    }>;
+    ledStates: Record<string, unknown>;
+    name: string;
+  }>;
 }
 
 export function validateProjectHardwareReferences(
@@ -250,11 +261,50 @@ export function validateProjectHardwareReferences(
   }
 
   const ledIds = new Set(profile.leds.map((led) => led.id));
+  const ledAddress = new Map(profile.leds.map((led) => [led.id, led.address]));
+  const validateLedList = (values: string[], subject: string) => {
+    values.forEach((ledId) => {
+      if (!ledIds.has(ledId)) {
+        throw new HardwareCompatibilityError(
+          `${subject} references LED "${ledId}", which is not part of ${profile.name}.`,
+        );
+      }
+    });
+    for (let index = 1; index < values.length; index += 1) {
+      if (
+        ledAddress.get(values[index - 1])! >= ledAddress.get(values[index])!
+      ) {
+        throw new HardwareCompatibilityError(
+          `${subject} LEDs must follow the hardware address order.`,
+        );
+      }
+    }
+  };
+
+  (project.groups ?? []).forEach((group) =>
+    validateLedList(group.ledIds, `Group "${group.name}"`),
+  );
+  const profileGroupIds = new Set(profile.groups.map((group) => group.id));
   project.scenes.forEach((scene) => {
     Object.keys(scene.ledStates).forEach((ledId) => {
       if (!ledIds.has(ledId)) {
         throw new HardwareCompatibilityError(
           `Scene "${scene.name}" references LED "${ledId}", which is not part of ${profile.name}.`,
+        );
+      }
+    });
+    (scene.layers ?? []).forEach((layer) => {
+      if (layer.target.kind === 'leds') {
+        validateLedList(
+          layer.target.ledIds,
+          `Effect layer "${layer.name}" in scene "${scene.name}"`,
+        );
+      } else if (
+        layer.target.kind === 'profile-group' &&
+        !profileGroupIds.has(layer.target.groupId)
+      ) {
+        throw new HardwareCompatibilityError(
+          `Effect layer "${layer.name}" references profile group "${layer.target.groupId}", which is not part of ${profile.name}.`,
         );
       }
     });

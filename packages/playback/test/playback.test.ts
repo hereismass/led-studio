@@ -3,16 +3,22 @@ import type { PaletteToken, Scene } from '@led-studio/project-format';
 import { describe, expect, it } from 'vitest';
 import {
   advanceLoopPosition,
+  compileSceneEvaluator,
   evaluateSceneFrame,
   normalizeLoopPosition,
 } from '../src/index.js';
 
 const WHITE_ID = '8b2c3d4e-5f60-4a71-8b92-c3d4e5f60718';
+const PINK_ID = '1a2b3c4d-5e6f-4789-8abc-def012345678';
+const GREEN_ID = 'f0e1d2c3-b4a5-4678-9abc-def012345678';
 const palette: PaletteToken[] = [
   { id: WHITE_ID, name: 'White', value: '#FFFFFF' },
+  { id: PINK_ID, name: 'Pink', value: '#FF2B9A' },
+  { id: GREEN_ID, name: 'Green', value: '#45FF72' },
 ];
 const scene: Scene = {
   id: '6c21dc04-9a75-4f10-a7bb-9f17dc2fe32a',
+  layers: [],
   ledStates: {
     'fret-21-g-side': {
       brightnessPercent: 40,
@@ -72,11 +78,13 @@ describe('scene evaluation', () => {
   });
 
   it('produces the same static frame at every loop position', () => {
-    expect(
-      evaluateSceneFrame(scene, palette, kmsFourString10LedProfile, 0),
-    ).toEqual(
-      evaluateSceneFrame(scene, palette, kmsFourString10LedProfile, 3.99),
+    const evaluator = compileSceneEvaluator(
+      scene,
+      palette,
+      kmsFourString10LedProfile,
     );
+    expect(evaluator.getFrame(0)).toBe(evaluator.frame);
+    expect(evaluator.getFrame(3.99)).toBe(evaluator.frame);
   });
 
   it('rejects unknown LED and palette references', () => {
@@ -91,5 +99,186 @@ describe('scene evaluation', () => {
     expect(() =>
       evaluateSceneFrame(scene, [], kmsFourString10LedProfile, 0),
     ).toThrow(/unknown palette token/);
+  });
+
+  it('evaluates Pulse waveforms, phase, active ranges, and zero overrides', () => {
+    const pulseScene: Scene = {
+      ...scene,
+      layers: [
+        {
+          effect: {
+            cycleLengthBeats: 1,
+            maxBrightnessPercent: 100,
+            minBrightnessPercent: 0,
+            paletteTokenId: PINK_ID,
+            phaseOffsetBeats: 0,
+            type: 'pulse',
+            waveform: 'sine',
+          },
+          enabled: true,
+          endBeat: 2,
+          id: 'bb93ef72-0987-4b53-9924-9a720215ce8a',
+          locked: false,
+          name: 'Pulse',
+          startBeat: 0,
+          target: { kind: 'leds', ledIds: ['fret-21-g-side'] },
+        },
+      ],
+    };
+    const evaluator = compileSceneEvaluator(
+      pulseScene,
+      palette,
+      kmsFourString10LedProfile,
+    );
+    expect(evaluator.getFrame(0)[0]).toMatchObject({
+      brightnessPercent: 0,
+      colour: '#FF2B9A',
+    });
+    expect(evaluator.getFrame(0.5)[0]).toMatchObject({
+      brightnessPercent: 100,
+      colour: '#FF2B9A',
+    });
+    expect(evaluator.getFrame(2)[0]).toMatchObject({
+      brightnessPercent: 40,
+      colour: '#FFFFFF',
+    });
+    expect(evaluator.getFrame(0.5)).toBe(evaluator.getFrame(0.5));
+  });
+
+  it('evaluates Chase address order, direction, width, fading trail, and wrap', () => {
+    const chaseScene: Scene = {
+      ...scene,
+      layers: [
+        {
+          effect: {
+            brightnessPercent: 90,
+            direction: 'forward',
+            paletteTokenId: GREEN_ID,
+            stepLengthBeats: 0.25,
+            trailLength: 2,
+            type: 'chase',
+            width: 1,
+          },
+          enabled: true,
+          endBeat: 4,
+          id: '2ac65eaf-4c2c-482e-b525-1c6e941dd0c8',
+          locked: false,
+          name: 'Chase',
+          startBeat: 0,
+          target: {
+            kind: 'leds',
+            ledIds: ['fret-17-g-side', 'fret-21-g-side', 'fret-19-g-side'],
+          },
+        },
+      ],
+    };
+    const atStart = evaluateSceneFrame(
+      chaseScene,
+      palette,
+      kmsFourString10LedProfile,
+      0,
+    );
+    expect(
+      atStart.slice(0, 3).map(({ brightnessPercent }) => brightnessPercent),
+    ).toEqual([90, 30, 60]);
+    const chaseEvaluator = compileSceneEvaluator(
+      chaseScene,
+      palette,
+      kmsFourString10LedProfile,
+    );
+    expect(chaseEvaluator.getFrame(0.01)).toBe(chaseEvaluator.getFrame(0.24));
+    const next = evaluateSceneFrame(
+      chaseScene,
+      palette,
+      kmsFourString10LedProfile,
+      0.25,
+    );
+    expect(
+      next.slice(0, 3).map(({ brightnessPercent }) => brightnessPercent),
+    ).toEqual([60, 90, 30]);
+    const chaseLayer = chaseScene.layers[0];
+    if (chaseLayer.effect.type !== 'chase') throw new Error('Expected Chase');
+    const reverse = evaluateSceneFrame(
+      {
+        ...chaseScene,
+        layers: [
+          {
+            ...chaseLayer,
+            effect: { ...chaseLayer.effect, direction: 'reverse' },
+          },
+        ],
+      },
+      palette,
+      kmsFourString10LedProfile,
+      0,
+    );
+    expect(reverse[2]).toMatchObject({
+      brightnessPercent: 90,
+      colour: '#45FF72',
+    });
+  });
+
+  it('resolves linked groups and gives the topmost enabled layer precedence', () => {
+    const layered: Scene = {
+      ...scene,
+      layers: [
+        {
+          effect: {
+            cycleLengthBeats: 1,
+            maxBrightnessPercent: 50,
+            minBrightnessPercent: 50,
+            paletteTokenId: PINK_ID,
+            phaseOffsetBeats: 0,
+            type: 'pulse',
+            waveform: 'square',
+          },
+          enabled: true,
+          endBeat: 4,
+          id: 'bb93ef72-0987-4b53-9924-9a720215ce8a',
+          locked: false,
+          name: 'Top pulse',
+          startBeat: 0,
+          target: {
+            groupId: 'ad56c792-07e6-42d7-84fd-0b509289b4ab',
+            kind: 'project-group',
+          },
+        },
+        {
+          effect: {
+            brightnessPercent: 100,
+            direction: 'forward',
+            paletteTokenId: GREEN_ID,
+            stepLengthBeats: 0.25,
+            trailLength: 0,
+            type: 'chase',
+            width: 1,
+          },
+          enabled: true,
+          endBeat: 4,
+          id: '2ac65eaf-4c2c-482e-b525-1c6e941dd0c8',
+          locked: false,
+          name: 'Bottom chase',
+          startBeat: 0,
+          target: { groupId: 'all-leds', kind: 'profile-group' },
+        },
+      ],
+    };
+    const frame = evaluateSceneFrame(
+      layered,
+      palette,
+      kmsFourString10LedProfile,
+      0,
+      [
+        {
+          id: 'ad56c792-07e6-42d7-84fd-0b509289b4ab',
+          ledIds: ['fret-21-g-side'],
+          name: 'First LED',
+        },
+      ],
+    );
+    expect(frame[0]).toMatchObject({
+      brightnessPercent: 50,
+      colour: '#FF2B9A',
+    });
   });
 });

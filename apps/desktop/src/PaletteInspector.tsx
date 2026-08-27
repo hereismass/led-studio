@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
+import type { ExecuteEditorCommandOptions } from '@led-studio/editor-core';
 import type { PaletteToken } from '@led-studio/project-format';
+import { useRafGroupedInteraction } from './useRafGroupedInteraction';
 
 interface PaletteInspectorProps {
   focusName: boolean;
@@ -7,7 +9,10 @@ interface PaletteInspectorProps {
   token: PaletteToken;
   onDelete: () => void;
   onDuplicate: () => void;
-  onUpdate: (changes: Partial<Pick<PaletteToken, 'name' | 'value'>>) => void;
+  onUpdate: (
+    changes: Partial<Pick<PaletteToken, 'name' | 'value'>>,
+    options?: ExecuteEditorCommandOptions,
+  ) => void;
   usageCount: number;
 }
 
@@ -26,6 +31,12 @@ export function PaletteInspector({
   const [valueDraft, setValueDraft] = useState(token.value);
   const [nameError, setNameError] = useState<string | null>(null);
   const [valueError, setValueError] = useState<string | null>(null);
+  const colourInteraction = useRafGroupedInteraction(
+    (
+      changes: Partial<Pick<PaletteToken, 'value'>>,
+      options: ExecuteEditorCommandOptions,
+    ) => onUpdate(changes, options),
+  );
 
   useEffect(() => {
     setNameDraft(token.name);
@@ -122,12 +133,20 @@ export function PaletteInspector({
             className="colour-picker"
             type="color"
             aria-label="Colour picker"
-            value={token.value}
+            value={valueDraft}
+            onBlur={colourInteraction.end}
             onChange={(event) => {
               const value = event.target.value.toUpperCase();
               setValueDraft(value);
               setValueError(null);
-              onUpdate({ value });
+              colourInteraction.update({ value });
+              colourInteraction.end();
+            }}
+            onInput={(event) => {
+              const value = event.currentTarget.value.toUpperCase();
+              setValueDraft(value);
+              setValueError(null);
+              colourInteraction.update({ value });
             }}
           />
           <input
@@ -171,7 +190,7 @@ export function PaletteInspector({
           disabled={usageCount > 0}
           title={
             usageCount > 0
-              ? 'Remove all scene references before deleting this colour'
+              ? 'Remove all LED and effect references before deleting this colour'
               : undefined
           }
           onClick={onDelete}
@@ -181,8 +200,9 @@ export function PaletteInspector({
       </div>
       {usageCount > 0 ? (
         <p className="palette-usage-note">
-          Used by {usageCount} scene {usageCount === 1 ? 'LED' : 'LEDs'}. Turn
-          those LEDs off or apply another colour before deleting.
+          Used by {usageCount} project{' '}
+          {usageCount === 1 ? 'reference' : 'references'}. Remove those LED or
+          effect references before deleting.
         </p>
       ) : null}
     </section>

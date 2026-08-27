@@ -8,6 +8,7 @@ import { FretboardEditor } from './FretboardEditor';
 
 const scene: Scene = {
   id: '6c21dc04-9a75-4f10-a7bb-9f17dc2fe32a',
+  layers: [],
   ledStates: {},
   loopLengthBeats: 4,
   name: 'Test Scene',

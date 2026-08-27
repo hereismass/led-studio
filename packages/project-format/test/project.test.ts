@@ -2,8 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   ProjectSchema,
   ProjectFormatError,
-  createProject,
-  generatePaletteTokenId,
   parseProject,
   parseProjectJson,
   serializeProject,
@@ -13,6 +11,9 @@ import {
 const HOT_PINK_ID = '8b2c3d4e-5f60-4a71-8b92-c3d4e5f60718';
 const ELECTRIC_GREEN_ID = '1a2b3c4d-5e6f-4789-8abc-def012345678';
 const BLACK_ID = 'f0e1d2c3-b4a5-4678-9abc-def012345678';
+const GROUP_ID = 'ad56c792-07e6-42d7-84fd-0b509289b4ab';
+const PULSE_ID = 'bb93ef72-0987-4b53-9924-9a720215ce8a';
+const CHASE_ID = '2ac65eaf-4c2c-482e-b525-1c6e941dd0c8';
 
 const validProject: Project = {
   schemaVersion: 2,
@@ -129,17 +130,11 @@ describe('ProjectSchema', () => {
     ).toBe(false);
   });
 
-  it.each(['sequence', 'groups'] as const)(
-    'requires the reserved %s collection to remain empty',
-    (collection) => {
-      expect(
-        ProjectSchema.safeParse({
-          ...validProject,
-          [collection]: [{}],
-        }).success,
-      ).toBe(false);
-    },
-  );
+  it('requires the reserved sequence collection to remain empty', () => {
+    expect(
+      ProjectSchema.safeParse({ ...validProject, sequence: [{}] }).success,
+    ).toBe(false);
+  });
 
   it('accepts static scenes and validates their linked palette tokens', () => {
     const scene = {
@@ -154,7 +149,7 @@ describe('ProjectSchema', () => {
       name: 'Marker Glow',
     };
     expect(parseProject({ ...validProject, scenes: [scene] }).scenes).toEqual([
-      scene,
+      { ...scene, layers: [] },
     ]);
     expect(
       ProjectSchema.safeParse({
@@ -166,6 +161,134 @@ describe('ProjectSchema', () => {
               x: { brightnessPercent: 100, paletteTokenId: BLACK_ID.slice(1) },
             },
           },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
+  it('accepts project groups and typed Pulse and Chase layers', () => {
+    const project = parseProject({
+      ...validProject,
+      groups: [
+        {
+          id: GROUP_ID,
+          ledIds: ['fret-21-g-side', 'fret-19-g-side'],
+          name: 'Upper markers',
+        },
+      ],
+      scenes: [
+        {
+          id: '6c21dc04-9a75-4f10-a7bb-9f17dc2fe32a',
+          layers: [
+            {
+              effect: {
+                cycleLengthBeats: 1,
+                maxBrightnessPercent: 100,
+                minBrightnessPercent: 0,
+                paletteTokenId: HOT_PINK_ID,
+                phaseOffsetBeats: 0.25,
+                type: 'pulse',
+                waveform: 'sine',
+              },
+              enabled: true,
+              endBeat: 2,
+              id: PULSE_ID,
+              locked: false,
+              name: 'Pulse',
+              startBeat: 0,
+              target: { groupId: GROUP_ID, kind: 'project-group' },
+            },
+            {
+              effect: {
+                brightnessPercent: 80,
+                direction: 'reverse',
+                paletteTokenId: ELECTRIC_GREEN_ID,
+                stepLengthBeats: 0.25,
+                trailLength: 2,
+                type: 'chase',
+                width: 1,
+              },
+              enabled: true,
+              endBeat: 4,
+              id: CHASE_ID,
+              locked: true,
+              name: 'Chase',
+              startBeat: 1,
+              target: { groupId: 'all-leds', kind: 'profile-group' },
+            },
+          ],
+          ledStates: {},
+          loopLengthBeats: 4,
+          name: 'Animated',
+        },
+      ],
+    });
+    expect(project.groups[0].name).toBe('Upper markers');
+    expect(project.scenes[0].layers.map((layer) => layer.effect.type)).toEqual([
+      'pulse',
+      'chase',
+    ]);
+  });
+
+  it('rejects invalid group, target, reference, and layer timing data', () => {
+    const baseScene = {
+      id: '6c21dc04-9a75-4f10-a7bb-9f17dc2fe32a',
+      ledStates: {},
+      loopLengthBeats: 4,
+      name: 'Animated',
+    };
+    const pulse = {
+      effect: {
+        cycleLengthBeats: 1,
+        maxBrightnessPercent: 100,
+        minBrightnessPercent: 0,
+        paletteTokenId: HOT_PINK_ID,
+        phaseOffsetBeats: 0,
+        type: 'pulse',
+        waveform: 'sine',
+      },
+      enabled: true,
+      endBeat: 4.25,
+      id: PULSE_ID,
+      locked: false,
+      name: 'Pulse',
+      startBeat: 0.1,
+      target: { groupId: GROUP_ID, kind: 'project-group' },
+    };
+    expect(
+      ProjectSchema.safeParse({
+        ...validProject,
+        groups: [{ id: GROUP_ID, ledIds: ['a', 'a'], name: 'Group' }],
+        scenes: [{ ...baseScene, layers: [pulse] }],
+      }).success,
+    ).toBe(false);
+    expect(
+      ProjectSchema.safeParse({
+        ...validProject,
+        scenes: [
+          {
+            ...baseScene,
+            layers: [
+              {
+                ...pulse,
+                endBeat: 4,
+                startBeat: 0,
+                target: { groupId: GROUP_ID, kind: 'project-group' },
+              },
+            ],
+          },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects duplicate group names', () => {
+    expect(
+      ProjectSchema.safeParse({
+        ...validProject,
+        groups: [
+          { id: GROUP_ID, ledIds: ['a'], name: 'Markers' },
+          { id: CHASE_ID, ledIds: ['b'], name: ' markers ' },
         ],
       }).success,
     ).toBe(false);
@@ -242,65 +365,7 @@ describe('ProjectSchema', () => {
   });
 });
 
-describe('project creation and JSON parsing', () => {
-  it('creates a project with a white palette token and default scene', () => {
-    const project = createProject({
-      name: 'Untitled Project',
-      hardwareProfile: 'kms-4-string-10-led-v1',
-    });
-
-    expect(project).toEqual({
-      schemaVersion: 2,
-      name: 'Untitled Project',
-      hardwareProfile: 'kms-4-string-10-led-v1',
-      palette: [
-        {
-          id: expect.stringMatching(
-            /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
-          ),
-          name: 'White',
-          value: '#FFFFFF',
-        },
-      ],
-      scenes: [
-        {
-          id: expect.stringMatching(
-            /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
-          ),
-          ledStates: {},
-          loopLengthBeats: 4,
-          name: 'Scene 1',
-        },
-      ],
-      sequence: [],
-      groups: [],
-      timing: {
-        previewBpm: 120,
-        timeSignature: { denominator: 4, numerator: 4 },
-      },
-    });
-  });
-
-  it('lights supplied default-scene LEDs with the generated white token', () => {
-    const project = createProject({
-      hardwareProfile: 'kms-4-string-10-led-v1',
-      initialSceneLedIds: ['led-0', 'led-1'],
-      name: 'Untitled Project',
-    });
-    const whiteTokenId = project.palette[0].id;
-
-    expect(project.scenes[0].ledStates).toEqual({
-      'led-0': { brightnessPercent: 100, paletteTokenId: whiteTokenId },
-      'led-1': { brightnessPercent: 100, paletteTokenId: whiteTokenId },
-    });
-  });
-
-  it('generates opaque UUID v4 palette token IDs', () => {
-    expect(generatePaletteTokenId()).toMatch(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
-    );
-  });
-
+describe('JSON parsing', () => {
   it('parses and validates a project from JSON', () => {
     expect(parseProjectJson(JSON.stringify(validProject))).toEqual(
       validProject,

@@ -24,6 +24,50 @@
       "id": "6c21dc04-9a75-4f10-a7bb-9f17dc2fe32a",
       "name": "Marker Glow",
       "loopLengthBeats": 4,
+      "layers": [
+        {
+          "id": "bb93ef72-0987-4b53-9924-9a720215ce8a",
+          "name": "Upper Marker Pulse",
+          "enabled": true,
+          "locked": false,
+          "startBeat": 0,
+          "endBeat": 4,
+          "target": {
+            "kind": "project-group",
+            "groupId": "ad56c792-07e6-42d7-84fd-0b509289b4ab"
+          },
+          "effect": {
+            "type": "pulse",
+            "paletteTokenId": "8b2c3d4e-5f60-4a71-8b92-c3d4e5f60718",
+            "minBrightnessPercent": 15,
+            "maxBrightnessPercent": 100,
+            "cycleLengthBeats": 1,
+            "phaseOffsetBeats": 0,
+            "waveform": "sine"
+          }
+        },
+        {
+          "id": "2ac65eaf-4c2c-482e-b525-1c6e941dd0c8",
+          "name": "E-side Chase",
+          "enabled": true,
+          "locked": false,
+          "startBeat": 0,
+          "endBeat": 4,
+          "target": {
+            "kind": "profile-group",
+            "groupId": "e-side-leds"
+          },
+          "effect": {
+            "type": "chase",
+            "paletteTokenId": "1a2b3c4d-5e6f-4789-8abc-def012345678",
+            "brightnessPercent": 100,
+            "stepLengthBeats": 0.25,
+            "direction": "forward",
+            "width": 1,
+            "trailLength": 1
+          }
+        }
+      ],
       "ledStates": {
         "fret-21-g-side": { "paletteTokenId": "1a2b3c4d-5e6f-4789-8abc-def012345678", "brightnessPercent": 100 },
         "fret-19-g-side": { "paletteTokenId": "1a2b3c4d-5e6f-4789-8abc-def012345678", "brightnessPercent": 100 },
@@ -39,7 +83,17 @@
     }
   ],
   "sequence": [],
-  "groups": [],
+  "groups": [
+    {
+      "id": "ad56c792-07e6-42d7-84fd-0b509289b4ab",
+      "name": "Upper G-side Markers",
+      "ledIds": [
+        "fret-21-g-side",
+        "fret-17-g-side",
+        "fret-12-g-side"
+      ]
+    }
+  ],
   "timing": {
     "previewBpm": 120,
     "timeSignature": { "numerator": 4, "denominator": 4 }

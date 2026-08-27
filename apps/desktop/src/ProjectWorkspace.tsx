@@ -1,48 +1,48 @@
+import {
+  createPaletteTokenAddedCommand,
+  createPaletteTokenDuplicatedCommand,
+  createEffectLayerAddedCommand,
+  createEffectLayerDuplicatedCommand,
+  createGroupAddedCommand,
+  createGroupDuplicatedCommand,
+  createSceneAddedCommand,
+  createSceneDuplicatedCommand,
+  paletteTokenUsageCount,
+  projectGroupUsageCount,
+  type EditorCommand,
+  type ExecuteEditorCommandOptions,
+} from '@led-studio/editor-core';
 import { getHardwareProfile } from '@led-studio/hardware-profiles';
-import type { Scene } from '@led-studio/project-format';
+import type {
+  EffectTarget,
+  ProjectGroup,
+  Scene,
+} from '@led-studio/project-format';
+import { AssetsPanel } from './AssetsPanel';
+import { HardwarePanel } from './HardwarePanel';
+import { InspectorPanel } from './InspectorPanel';
+import { TimelinePanel } from './TimelinePanel';
+import { useScenePreview } from './useScenePreview';
+import { useWorkspaceLayout } from './useWorkspaceLayout';
+import { useWorkspaceSelection } from './useWorkspaceSelection';
+import { WorkspaceResizer } from './WorkspaceResizer';
+import { WorkspaceToolbar } from './WorkspaceToolbar';
 import {
-  useEffect,
-  useRef,
-  useState,
-  type KeyboardEvent as ReactKeyboardEvent,
-  type PointerEvent as ReactPointerEvent,
-} from 'react';
-import { paletteTokenUsageCount, type EditorCommand } from './editorCommands';
-import { LedSelectionInspector } from './LedSelectionInspector';
-import { PaletteInspector } from './PaletteInspector';
-import { PlaybackControls } from './PlaybackControls';
-import { PreviewPlaybackController } from './previewPlayback';
-import { ProjectTitleEditor } from './ProjectTitleEditor';
-import { SceneFretboard } from './SceneFretboard';
-import { SceneInspector } from './SceneInspector';
-import { SceneTimeline } from './SceneTimeline';
-import { TimingControls } from './TimingControls';
-import {
-  isProjectDirty,
   type ActiveProjectSession,
+  type EditorCommandResult,
   type ProjectOperation,
   type SaveFeedback,
 } from './projectSession';
-import {
-  defaultWorkspaceLayout,
-  loadWorkspaceLayout,
-  resizeWorkspacePanel,
-  saveWorkspaceLayout,
-} from './workspaceLayout';
-
-type ResizablePanel = 'bottom' | 'left' | 'right';
-type InspectorTarget =
-  | { kind: 'leds' }
-  | { id: string; kind: 'palette' }
-  | { kind: 'project' }
-  | { id: string; kind: 'scene' };
-
 interface ProjectWorkspaceProps {
   activeProject: ActiveProjectSession;
   canRedo: boolean;
   canUndo: boolean;
+  editorFeedback: string | null;
   onChooseAnother: () => void;
-  onExecuteCommand: (command: EditorCommand) => void;
+  onExecuteCommand: (
+    command: EditorCommand,
+    options?: ExecuteEditorCommandOptions,
+  ) => EditorCommandResult;
   onRedo: () => void;
   onSave: () => void;
   onSaveAs: () => void;
@@ -51,35 +51,11 @@ interface ProjectWorkspaceProps {
   saveFeedback: SaveFeedback | null;
 }
 
-interface PanelPlaceholderProps {
-  description: string;
-  title: string;
-}
-
-function PanelPlaceholder({ description, title }: PanelPlaceholderProps) {
-  return (
-    <div className="panel-placeholder">
-      <span aria-hidden="true">◇</span>
-      <div>
-        <strong>{title}</strong>
-        <p>{description}</p>
-      </div>
-    </div>
-  );
-}
-
-function sourceDescription(activeProject: ActiveProjectSession): string {
-  if (activeProject.source.kind === 'file')
-    return `Local file · ${activeProject.source.file.fileName}`;
-  return activeProject.source.kind === 'example'
-    ? 'Unsaved project · Based on bundled example'
-    : 'Unsaved new project';
-}
-
 export function ProjectWorkspace({
   activeProject,
   canRedo,
   canUndo,
+  editorFeedback,
   onChooseAnother,
   onExecuteCommand,
   onRedo,
@@ -93,29 +69,18 @@ export function ProjectWorkspace({
   const profile = getHardwareProfile(project.hardwareProfile)!;
   const colours = project.palette;
   const scenes = project.scenes;
-  const isBusy = operation !== 'idle';
-  const initialSceneId = scenes[0]?.id ?? null;
-  const [activeSceneId, setActiveSceneId] = useState<string | null>(
-    initialSceneId,
-  );
-  const [focusTokenId, setFocusTokenId] = useState<string | null>(null);
-  const [inspectorTarget, setInspectorTarget] = useState<InspectorTarget>(
-    initialSceneId
-      ? { id: initialSceneId, kind: 'scene' }
-      : { kind: 'project' },
-  );
-  const [layout, setLayout] = useState(loadWorkspaceLayout);
-  const [selectedLedIds, setSelectedLedIds] = useState<string[]>([]);
-  const pendingEntityIdsRef = useRef<{
-    ids: Set<string>;
-    kind: 'palette' | 'scene';
-  } | null>(null);
-  const stopResizeRef = useRef<(() => void) | null>(null);
-  const previewControllerRef = useRef<PreviewPlaybackController | null>(null);
-  if (!previewControllerRef.current) {
-    previewControllerRef.current = new PreviewPlaybackController();
-  }
-  const previewController = previewControllerRef.current;
+  const {
+    activeSceneId,
+    focusTokenId,
+    inspectorTarget,
+    ledSelectionSource,
+    selectedLedIds,
+    setActiveSceneId,
+    setFocusTokenId,
+    setInspectorTarget,
+    setLedSelectionSource,
+    setSelectedLedIds,
+  } = useWorkspaceSelection(scenes, colours, project.groups);
 
   const activeScene =
     scenes.find((scene) => scene.id === activeSceneId) ?? null;
@@ -127,94 +92,56 @@ export function ProjectWorkspace({
     inspectorTarget.kind === 'scene'
       ? (scenes.find((scene) => scene.id === inspectorTarget.id) ?? null)
       : null;
+  const selectedGroup =
+    inspectorTarget.kind === 'group'
+      ? (project.groups.find((group) => group.id === inspectorTarget.id) ??
+        null)
+      : null;
+  const selectedLayer =
+    inspectorTarget.kind === 'layer' &&
+    activeScene?.id === inspectorTarget.sceneId
+      ? (activeScene.layers.find((layer) => layer.id === inspectorTarget.id) ??
+        null)
+      : null;
   const selectedLeds = profile.leds.filter((led) =>
     selectedLedIds.includes(led.id),
   );
-
-  useEffect(() => saveWorkspaceLayout(layout), [layout]);
-  useEffect(() => () => stopResizeRef.current?.(), []);
-  useEffect(() => () => previewController.stop(), [previewController]);
-  useEffect(() => {
-    previewController.configure({
-      beatsPerMinute: project.timing.previewBpm,
-      loopLengthBeats: activeScene?.loopLengthBeats ?? 4,
-      sceneId: activeScene?.id ?? null,
-    });
-  }, [
-    activeScene?.id,
-    activeScene?.loopLengthBeats,
-    previewController,
+  const previewController = useScenePreview(
+    activeScene,
     project.timing.previewBpm,
-  ]);
-  useEffect(() => {
-    function handlePlaybackShortcut(event: KeyboardEvent) {
-      if (event.code !== 'Space' || event.repeat || event.defaultPrevented)
-        return;
-      const target = event.target;
-      if (
-        target instanceof HTMLElement &&
-        target.closest(
-          'input, select, textarea, button, a, [contenteditable="true"]',
-        )
-      )
-        return;
-      event.preventDefault();
-      previewController.toggle();
-    }
-    window.addEventListener('keydown', handlePlaybackShortcut);
-    return () => window.removeEventListener('keydown', handlePlaybackShortcut);
-  }, [previewController]);
-  useEffect(() => {
-    const pending = pendingEntityIdsRef.current;
-    if (pending) {
-      const collection = pending.kind === 'palette' ? colours : scenes;
-      const added = collection.find((entity) => !pending.ids.has(entity.id));
-      pendingEntityIdsRef.current = null;
-      if (added) {
-        if (pending.kind === 'palette') {
-          setInspectorTarget({ id: added.id, kind: 'palette' });
-          setFocusTokenId(added.id);
-        } else {
-          setActiveSceneId(added.id);
-          setInspectorTarget({ id: added.id, kind: 'scene' });
-          setSelectedLedIds([]);
-        }
-        return;
-      }
-    }
-
-    if (activeSceneId && !scenes.some((scene) => scene.id === activeSceneId)) {
-      const nearest = scenes[0] ?? null;
-      setActiveSceneId(nearest?.id ?? null);
-      setSelectedLedIds([]);
-      setInspectorTarget(
-        nearest ? { id: nearest.id, kind: 'scene' } : { kind: 'project' },
-      );
-    }
-    if (
-      inspectorTarget.kind === 'palette' &&
-      !colours.some((token) => token.id === inspectorTarget.id)
-    ) {
-      setInspectorTarget({ kind: 'project' });
-    }
-  }, [activeSceneId, colours, inspectorTarget, scenes]);
+  );
+  const {
+    beginResize,
+    layout,
+    resetLayout,
+    resizeWithKeyboard,
+    togglePanel,
+    workspaceStyle,
+  } = useWorkspaceLayout();
 
   function executeAndSelectCreated(
     command: EditorCommand,
     kind: 'palette' | 'scene',
+    id: string,
   ) {
-    const collection = kind === 'palette' ? colours : scenes;
-    pendingEntityIdsRef.current = {
-      ids: new Set(collection.map(({ id }) => id)),
-      kind,
-    };
-    onExecuteCommand(command);
+    const result = onExecuteCommand(command);
+    if (!result.ok || !result.changed) return;
+    if (kind === 'palette') {
+      setInspectorTarget({ id, kind: 'palette' });
+      setFocusTokenId(id);
+    } else {
+      setActiveSceneId(id);
+      setInspectorTarget({ id, kind: 'scene' });
+      setSelectedLedIds([]);
+      setLedSelectionSource({ kind: 'direct' });
+    }
   }
 
   function activateScene(scene: Scene) {
     setActiveSceneId(scene.id);
     setInspectorTarget({ id: scene.id, kind: 'scene' });
     setSelectedLedIds([]);
+    setLedSelectionSource({ kind: 'direct' });
   }
 
   function deleteScene(scene: Scene) {
@@ -240,197 +167,82 @@ export function ProjectWorkspace({
     onExecuteCommand({ id: selectedToken.id, type: 'palette-token-deleted' });
   }
 
-  function navigatePalette(
-    index: number,
-    event: ReactKeyboardEvent<HTMLButtonElement>,
-  ) {
-    let nextIndex: number | null = null;
-    if (event.key === 'ArrowDown')
-      nextIndex = Math.min(index + 1, colours.length - 1);
-    if (event.key === 'ArrowUp') nextIndex = Math.max(index - 1, 0);
-    if (event.key === 'Home') nextIndex = 0;
-    if (event.key === 'End') nextIndex = colours.length - 1;
-    if (nextIndex === null || nextIndex === index) return;
-    event.preventDefault();
-    const token = colours[nextIndex];
-    setInspectorTarget({ id: token.id, kind: 'palette' });
-    setFocusTokenId(null);
-    window.setTimeout(() =>
-      document.getElementById(`palette-token-${token.id}`)?.focus(),
-    );
-  }
-
   function selectLeds(ledIds: string[]) {
     setSelectedLedIds(ledIds);
+    setLedSelectionSource({ kind: 'direct' });
+    if (inspectorTarget.kind === 'group') return;
     if (ledIds.length > 0) setInspectorTarget({ kind: 'leds' });
     else if (activeScene)
       setInspectorTarget({ id: activeScene.id, kind: 'scene' });
   }
 
-  function selectGroup(ledIds: string[], additive: boolean) {
+  function selectGroup(
+    ledIds: string[],
+    additive: boolean,
+    source: { id: string; kind: 'profile-group' | 'project-group' },
+  ) {
     selectLeds(
       additive ? [...new Set([...selectedLedIds, ...ledIds])] : ledIds,
     );
+    setLedSelectionSource(additive ? { kind: 'direct' } : source);
   }
 
-  function togglePanel(panel: ResizablePanel) {
-    setLayout((current) => ({
-      ...current,
-      [`${panel}Collapsed`]: !current[`${panel}Collapsed`],
-    }));
+  function selectProjectGroup(group: ProjectGroup) {
+    setSelectedLedIds(group.ledIds);
+    setLedSelectionSource({ id: group.id, kind: 'project-group' });
+    setInspectorTarget({ id: group.id, kind: 'group' });
   }
 
-  function beginResize(
-    panel: ResizablePanel,
-    event: ReactPointerEvent<HTMLDivElement>,
-  ) {
-    event.preventDefault();
-    stopResizeRef.current?.();
-    const startPosition = panel === 'bottom' ? event.clientY : event.clientX;
-    let previousDelta = 0;
-    function handlePointerMove(pointerEvent: PointerEvent) {
-      const position =
-        panel === 'bottom' ? pointerEvent.clientY : pointerEvent.clientX;
-      const totalDelta = position - startPosition;
-      const nextDelta = totalDelta - previousDelta;
-      previousDelta = totalDelta;
-      setLayout((current) => resizeWorkspacePanel(current, panel, nextDelta));
-    }
-    function stopResizing() {
-      window.removeEventListener('pointermove', handlePointerMove);
-      window.removeEventListener('pointerup', stopResizing);
-      stopResizeRef.current = null;
-    }
-    stopResizeRef.current = stopResizing;
-    window.addEventListener('pointermove', handlePointerMove);
-    window.addEventListener('pointerup', stopResizing, { once: true });
-  }
-
-  function resizeWithKeyboard(
-    panel: ResizablePanel,
-    event: ReactKeyboardEvent<HTMLDivElement>,
-  ) {
-    const step = event.shiftKey ? 24 : 8;
-    let delta: number | null = null;
-    if (panel === 'bottom') {
-      if (event.key === 'ArrowUp') delta = -step;
-      if (event.key === 'ArrowDown') delta = step;
+  function addEffectLayer(effectType: 'pulse' | 'chase') {
+    if (!activeScene || colours.length === 0) return;
+    let target: EffectTarget;
+    if (ledSelectionSource.kind === 'profile-group') {
+      target = { groupId: ledSelectionSource.id, kind: 'profile-group' };
+    } else if (ledSelectionSource.kind === 'project-group') {
+      target = { groupId: ledSelectionSource.id, kind: 'project-group' };
+    } else if (selectedLedIds.length > 0) {
+      target = { kind: 'leds', ledIds: selectedLedIds };
     } else {
-      if (event.key === 'ArrowLeft') delta = -step;
-      if (event.key === 'ArrowRight') delta = step;
+      target = {
+        groupId:
+          profile.groups.find((group) => group.id === 'all-leds')?.id ??
+          profile.groups[0].id,
+        kind: 'profile-group',
+      };
     }
-    if (delta === null) return;
-    event.preventDefault();
-    setLayout((current) => resizeWorkspacePanel(current, panel, delta));
+    const command = createEffectLayerAddedCommand(
+      project,
+      activeScene.id,
+      effectType,
+      target,
+    );
+    const result = onExecuteCommand(command);
+    if (result.ok && result.changed)
+      setInspectorTarget({
+        id: command.id,
+        kind: 'layer',
+        sceneId: activeScene.id,
+      });
   }
-
-  const workspaceStyle = {
-    '--bottom-panel-height': `${layout.bottomCollapsed ? 38 : layout.bottomHeight}px`,
-    '--left-panel-width': `${layout.leftCollapsed ? 44 : layout.leftWidth}px`,
-    '--right-panel-width': `${layout.rightCollapsed ? 44 : layout.rightWidth}px`,
-  } as React.CSSProperties;
 
   return (
     <main className="workspace-shell" style={workspaceStyle}>
-      <header className="workspace-toolbar">
-        <div className="workspace-project-identity">
-          <button
-            className="workspace-icon-button"
-            type="button"
-            aria-label="Choose another project"
-            title="Choose another project"
-            disabled={isBusy}
-            onClick={onChooseAnother}
-          >
-            ←
-          </button>
-          <div className="workspace-title">
-            <div>
-              <ProjectTitleEditor
-                name={project.name}
-                onCommit={(name) =>
-                  onExecuteCommand({ name, type: 'project-renamed' })
-                }
-              />
-              {isProjectDirty(activeProject) ? (
-                <span className="workspace-dirty-status">
-                  {activeProject.source.kind === 'file'
-                    ? 'Modified'
-                    : 'Unsaved'}
-                </span>
-              ) : (
-                <span className="workspace-saved-status">Saved</span>
-              )}
-            </div>
-            <p>{sourceDescription(activeProject)}</p>
-          </div>
-        </div>
-
-        <div
-          className="workspace-transport"
-          aria-label="Preview timing and playback controls"
-        >
-          <PlaybackControls
-            controller={previewController}
-            disabled={!activeScene}
-          />
-          <TimingControls
-            timing={project.timing}
-            onCommit={(changes) =>
-              onExecuteCommand({
-                changes,
-                type: 'project-timing-updated',
-              })
-            }
-          />
-        </div>
-
-        <div className="workspace-actions">
-          <div className="workspace-history-actions" aria-label="Edit history">
-            <button
-              className="workspace-icon-button"
-              type="button"
-              aria-label="Undo"
-              aria-keyshortcuts="Meta+Z Control+Z"
-              disabled={!canUndo}
-              onClick={onUndo}
-            >
-              ↶
-            </button>
-            <button
-              className="workspace-icon-button"
-              type="button"
-              aria-label="Redo"
-              aria-keyshortcuts="Meta+Shift+Z Control+Shift+Z"
-              disabled={!canRedo}
-              onClick={onRedo}
-            >
-              ↷
-            </button>
-          </div>
-          <span className="profile-chip" title={project.hardwareProfile}>
-            {profile.name}
-          </span>
-          <button
-            className="workspace-action-button"
-            aria-keyshortcuts="Meta+S Control+S"
-            type="button"
-            disabled={isBusy}
-            onClick={onSave}
-          >
-            {operation === 'saving' ? 'Saving…' : 'Save'}
-          </button>
-          <button
-            className="workspace-action-button workspace-action-secondary"
-            aria-keyshortcuts="Meta+Shift+S Control+Shift+S"
-            type="button"
-            disabled={isBusy}
-            onClick={onSaveAs}
-          >
-            Save As
-          </button>
-        </div>
-      </header>
+      <WorkspaceToolbar
+        activeProject={activeProject}
+        canRedo={canRedo}
+        canUndo={canUndo}
+        hasActiveScene={Boolean(activeScene)}
+        onChooseAnother={onChooseAnother}
+        onExecuteCommand={onExecuteCommand}
+        onRedo={onRedo}
+        onSave={onSave}
+        onSaveAs={onSaveAs}
+        onUndo={onUndo}
+        operation={operation}
+        previewController={previewController}
+        profile={profile}
+        project={project}
+      />
 
       {saveFeedback ? (
         <div
@@ -440,441 +252,318 @@ export function ProjectWorkspace({
           {saveFeedback.message}
         </div>
       ) : null}
+      {editorFeedback ? (
+        <div
+          className="workspace-feedback workspace-feedback-error"
+          role="alert"
+        >
+          {editorFeedback}
+        </div>
+      ) : null}
 
       <div className="workspace-editor">
-        <aside
-          className={`workspace-panel assets-panel ${layout.leftCollapsed ? 'workspace-panel-collapsed' : ''}`}
-          aria-label="Project assets"
-        >
-          <div className="workspace-panel-header">
-            {layout.leftCollapsed ? null : <h2>Assets</h2>}
-            <button
-              type="button"
-              aria-label={
-                layout.leftCollapsed
-                  ? 'Expand assets panel'
-                  : 'Collapse assets panel'
-              }
-              title={
-                layout.leftCollapsed
-                  ? 'Expand assets panel'
-                  : 'Collapse assets panel'
-              }
-              onClick={() => togglePanel('left')}
-            >
-              {layout.leftCollapsed ? '›' : '‹'}
-            </button>
-          </div>
-          {layout.leftCollapsed ? (
-            <div className="collapsed-panel-label" aria-hidden="true">
-              Assets
-            </div>
-          ) : (
-            <div className="assets-content">
-              <section className="asset-section">
-                <div className="asset-section-heading">
-                  <h3>Scenes</h3>
-                  <div>
-                    <span>{scenes.length}</span>
-                    <button
-                      aria-label="Add scene"
-                      className="asset-add-button"
-                      type="button"
-                      onClick={() =>
-                        executeAndSelectCreated(
-                          { type: 'scene-added' },
-                          'scene',
-                        )
-                      }
-                    >
-                      ＋ Add scene
-                    </button>
-                  </div>
-                </div>
-                {scenes.length === 0 ? (
-                  <p className="asset-empty-copy">
-                    No scenes yet. Add one to begin editing LEDs.
-                  </p>
-                ) : (
-                  <div
-                    className="asset-scene-list"
-                    role="listbox"
-                    aria-label="Scenes"
-                  >
-                    {scenes.map((scene) => (
-                      <button
-                        className="asset-scene"
-                        type="button"
-                        role="option"
-                        aria-selected={activeSceneId === scene.id}
-                        key={scene.id}
-                        onClick={() => activateScene(scene)}
-                      >
-                        <span className="asset-scene-icon" aria-hidden="true">
-                          ◆
-                        </span>
-                        <span>
-                          <strong>{scene.name}</strong>
-                          <small>
-                            {scene.loopLengthBeats} beats ·{' '}
-                            {Object.keys(scene.ledStates).length} lit
-                          </small>
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </section>
-              <section className="asset-section">
-                <div className="asset-section-heading">
-                  <h3>Palette</h3>
-                  <div>
-                    <span>{colours.length}</span>
-                    <button
-                      aria-label="Add colour"
-                      className="asset-add-button"
-                      type="button"
-                      onClick={() =>
-                        executeAndSelectCreated(
-                          { type: 'palette-token-added' },
-                          'palette',
-                        )
-                      }
-                    >
-                      ＋ Add colour
-                    </button>
-                  </div>
-                </div>
-                {colours.length === 0 ? (
-                  <p className="asset-empty-copy">No palette colours yet</p>
-                ) : (
-                  <div
-                    className="asset-palette-list"
-                    role="listbox"
-                    aria-label="Palette colours"
-                  >
-                    {colours.map((token, index) => (
-                      <button
-                        className="asset-colour"
-                        type="button"
-                        role="option"
-                        aria-label={`${token.name} ${token.value}`}
-                        aria-selected={
-                          inspectorTarget.kind === 'palette' &&
-                          inspectorTarget.id === token.id
-                        }
-                        id={`palette-token-${token.id}`}
-                        key={token.id}
-                        tabIndex={
-                          (inspectorTarget.kind === 'palette' &&
-                            inspectorTarget.id === token.id) ||
-                          (inspectorTarget.kind !== 'palette' && index === 0)
-                            ? 0
-                            : -1
-                        }
-                        onClick={() => {
-                          setInspectorTarget({ id: token.id, kind: 'palette' });
-                          setFocusTokenId(null);
-                        }}
-                        onKeyDown={(event) => navigatePalette(index, event)}
-                      >
-                        <span
-                          className="asset-colour-swatch"
-                          style={{ backgroundColor: token.value }}
-                          aria-hidden="true"
-                        />
-                        <span>
-                          <strong>{token.name}</strong>
-                          <small>{token.value}</small>
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </section>
-            </div>
-          )}
-        </aside>
-
-        <div
-          className="workspace-resizer workspace-resizer-vertical"
-          role="separator"
-          aria-label="Resize assets panel"
-          aria-orientation="vertical"
-          aria-valuemax={380}
-          aria-valuemin={188}
-          aria-valuenow={layout.leftWidth}
-          tabIndex={layout.leftCollapsed ? -1 : 0}
-          onKeyDown={(event) => resizeWithKeyboard('left', event)}
-          onPointerDown={(event) => beginResize('left', event)}
+        <AssetsPanel
+          activeSceneId={activeSceneId}
+          collapsed={layout.leftCollapsed}
+          groups={project.groups}
+          hasLedSelection={selectedLedIds.length > 0}
+          palette={colours}
+          scenes={scenes}
+          selectedPaletteId={
+            inspectorTarget.kind === 'palette' ? inspectorTarget.id : null
+          }
+          selectedGroupId={
+            inspectorTarget.kind === 'group' ? inspectorTarget.id : null
+          }
+          onAddColour={() => {
+            const command = createPaletteTokenAddedCommand(project);
+            executeAndSelectCreated(command, 'palette', command.id);
+          }}
+          onAddGroup={() => {
+            if (selectedLedIds.length === 0) return;
+            const command = createGroupAddedCommand(project, selectedLedIds);
+            const result = onExecuteCommand(command);
+            if (!result.ok || !result.changed) return;
+            setInspectorTarget({ id: command.id, kind: 'group' });
+            setLedSelectionSource({ id: command.id, kind: 'project-group' });
+          }}
+          onAddScene={() => {
+            const command = createSceneAddedCommand(project);
+            executeAndSelectCreated(command, 'scene', command.id);
+          }}
+          onSelectPalette={(id) => {
+            setInspectorTarget({ id, kind: 'palette' });
+            setFocusTokenId(null);
+          }}
+          onSelectGroup={selectProjectGroup}
+          onSelectScene={activateScene}
+          onToggle={() => togglePanel('left')}
         />
 
-        <section
-          className="hardware-workspace"
-          aria-labelledby="hardware-title"
-        >
-          <div className="hardware-workspace-heading">
-            <div>
-              <p className="workspace-eyebrow">Hardware editor</p>
-              <h2 id="hardware-title">{activeScene?.name ?? profile.name}</h2>
-            </div>
-            <div
-              className="workspace-view-actions"
-              aria-label="Workspace panels"
-            >
-              <button type="button" onClick={() => togglePanel('left')}>
-                Assets
-              </button>
-              <button type="button" onClick={() => togglePanel('right')}>
-                Inspector
-              </button>
-              <button type="button" onClick={() => togglePanel('bottom')}>
-                Timeline
-              </button>
-              <button
-                type="button"
-                onClick={() => setLayout({ ...defaultWorkspaceLayout })}
-              >
-                Reset layout
-              </button>
-            </div>
-          </div>
-          <div className="hardware-groups" aria-label="LED selection groups">
-            {profile.groups.map((group) => (
-              <button
-                type="button"
-                disabled={!activeScene}
-                key={group.id}
-                onClick={(event) => selectGroup(group.ledIds, event.shiftKey)}
-              >
-                {group.name}
-                <span>{group.ledIds.length}</span>
-              </button>
-            ))}
-          </div>
-          <div className="hardware-stage">
-            <SceneFretboard
-              controller={previewController}
-              palette={colours}
-              profile={profile}
-              scene={activeScene}
-              selectedLedIds={selectedLedIds}
-              onSelectionChange={selectLeds}
-            />
-          </div>
-        </section>
-
-        <div
-          className="workspace-resizer workspace-resizer-vertical"
-          role="separator"
-          aria-label="Resize inspector panel"
-          aria-orientation="vertical"
-          aria-valuemax={420}
-          aria-valuemin={220}
-          aria-valuenow={layout.rightWidth}
-          tabIndex={layout.rightCollapsed ? -1 : 0}
-          onKeyDown={(event) => resizeWithKeyboard('right', event)}
-          onPointerDown={(event) => beginResize('right', event)}
+        <WorkspaceResizer
+          collapsed={layout.leftCollapsed}
+          max={380}
+          min={188}
+          onKeyDown={resizeWithKeyboard}
+          onPointerDown={beginResize}
+          orientation="vertical"
+          panel="left"
+          value={layout.leftWidth}
         />
 
-        <aside
-          className={`workspace-panel inspector-panel ${layout.rightCollapsed ? 'workspace-panel-collapsed' : ''}`}
-          aria-label="Inspector"
-        >
-          <div className="workspace-panel-header">
-            <button
-              type="button"
-              aria-label={
-                layout.rightCollapsed
-                  ? 'Expand inspector panel'
-                  : 'Collapse inspector panel'
-              }
-              title={
-                layout.rightCollapsed
-                  ? 'Expand inspector panel'
-                  : 'Collapse inspector panel'
-              }
-              onClick={() => togglePanel('right')}
-            >
-              {layout.rightCollapsed ? '‹' : '›'}
-            </button>
-            {layout.rightCollapsed ? null : <h2>Inspector</h2>}
-          </div>
-          {layout.rightCollapsed ? (
-            <div className="collapsed-panel-label" aria-hidden="true">
-              Inspector
-            </div>
-          ) : (
-            <div className="inspector-content">
-              {inspectorTarget.kind === 'leds' &&
-              activeScene &&
-              selectedLeds.length > 0 ? (
-                <LedSelectionInspector
-                  leds={selectedLeds}
-                  palette={colours}
-                  scene={activeScene}
-                  onPaint={(paletteTokenId) =>
-                    onExecuteCommand({
-                      ledIds: selectedLedIds,
-                      paletteTokenId,
-                      sceneId: activeScene.id,
-                      type: 'scene-leds-painted',
-                    })
-                  }
-                  onBrightnessChange={(brightnessPercent) =>
-                    onExecuteCommand({
-                      brightnessPercent,
-                      ledIds: selectedLedIds,
-                      sceneId: activeScene.id,
-                      type: 'scene-led-brightness-set',
-                    })
-                  }
-                  onTurnOff={() =>
-                    onExecuteCommand({
-                      ledIds: selectedLedIds,
-                      sceneId: activeScene.id,
-                      type: 'scene-leds-turned-off',
-                    })
-                  }
-                />
-              ) : selectedToken ? (
-                <PaletteInspector
-                  key={selectedToken.id}
-                  focusName={focusTokenId === selectedToken.id}
-                  palette={colours}
-                  token={selectedToken}
-                  usageCount={paletteTokenUsageCount(project, selectedToken.id)}
-                  onDelete={deleteSelectedToken}
-                  onDuplicate={() =>
-                    executeAndSelectCreated(
-                      {
-                        id: selectedToken.id,
-                        type: 'palette-token-duplicated',
-                      },
-                      'palette',
-                    )
-                  }
-                  onUpdate={(changes) =>
-                    onExecuteCommand({
-                      changes,
-                      id: selectedToken.id,
-                      type: 'palette-token-updated',
-                    })
-                  }
-                />
-              ) : selectedScene ? (
-                <SceneInspector
-                  scene={selectedScene}
-                  sceneNames={scenes}
-                  onDelete={() => deleteScene(selectedScene)}
-                  onDuplicate={() =>
-                    executeAndSelectCreated(
-                      { id: selectedScene.id, type: 'scene-duplicated' },
-                      'scene',
-                    )
-                  }
-                  onUpdate={(changes) =>
-                    onExecuteCommand({
-                      changes,
-                      id: selectedScene.id,
-                      type: 'scene-updated',
-                    })
-                  }
-                />
-              ) : (
-                <>
-                  <section className="inspector-section">
-                    <p className="workspace-eyebrow">Project</p>
-                    <dl>
-                      <div>
-                        <dt>Profile</dt>
-                        <dd>{profile.name}</dd>
-                      </div>
-                      <div>
-                        <dt>LEDs</dt>
-                        <dd>{profile.leds.length}</dd>
-                      </div>
-                      <div>
-                        <dt>Format</dt>
-                        <dd>Schema v{project.schemaVersion}</dd>
-                      </div>
-                      <div>
-                        <dt>Timing</dt>
-                        <dd>
-                          {project.timing.previewBpm} BPM ·{' '}
-                          {project.timing.timeSignature.numerator}/
-                          {project.timing.timeSignature.denominator}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Scenes</dt>
-                        <dd>{scenes.length}</dd>
-                      </div>
-                    </dl>
-                  </section>
-                  <PanelPlaceholder
-                    title="Nothing selected"
-                    description="Select a scene, palette colour, or fretboard LED to edit it."
-                  />
-                </>
-              )}
-            </div>
-          )}
-        </aside>
-
-        <div
-          className="workspace-resizer workspace-resizer-horizontal"
-          role="separator"
-          aria-label="Resize timeline panel"
-          aria-orientation="horizontal"
-          aria-valuemax={420}
-          aria-valuemin={150}
-          aria-valuenow={layout.bottomHeight}
-          tabIndex={layout.bottomCollapsed ? -1 : 0}
-          onKeyDown={(event) => resizeWithKeyboard('bottom', event)}
-          onPointerDown={(event) => beginResize('bottom', event)}
+        <HardwarePanel
+          controller={previewController}
+          groups={project.groups}
+          palette={colours}
+          profile={profile}
+          scene={activeScene}
+          selectedLedIds={selectedLedIds}
+          onResetLayout={resetLayout}
+          onSelectGroup={selectGroup}
+          onSelectionChange={selectLeds}
+          onTogglePanel={togglePanel}
         />
-        <section
-          className={`timeline-panel ${layout.bottomCollapsed ? 'timeline-panel-collapsed' : ''}`}
-          aria-label="Timeline"
-        >
-          <div className="timeline-tabs">
-            <strong>Scene timeline</strong>
-            <button
-              className="timeline-collapse-button"
-              type="button"
-              aria-label={
-                layout.bottomCollapsed ? 'Expand timeline' : 'Collapse timeline'
-              }
-              title={
-                layout.bottomCollapsed ? 'Expand timeline' : 'Collapse timeline'
-              }
-              onClick={() => togglePanel('bottom')}
-            >
-              {layout.bottomCollapsed ? '⌃' : '⌄'}
-            </button>
-          </div>
-          {layout.bottomCollapsed ? null : (
-            <div
-              className="timeline-content"
-              role="tabpanel"
-              aria-label="Scene timeline"
-            >
-              {activeScene ? (
-                <SceneTimeline
-                  controller={previewController}
-                  scene={activeScene}
-                  timing={project.timing}
-                />
-              ) : (
-                <PanelPlaceholder
-                  title="Select a scene to view its loop"
-                  description="Create or select a scene to use preview playback."
-                />
-              )}
-            </div>
-          )}
-        </section>
+
+        <WorkspaceResizer
+          collapsed={layout.rightCollapsed}
+          max={420}
+          min={220}
+          onKeyDown={resizeWithKeyboard}
+          onPointerDown={beginResize}
+          orientation="vertical"
+          panel="right"
+          value={layout.rightWidth}
+        />
+
+        <InspectorPanel
+          activeScene={activeScene}
+          collapsed={layout.rightCollapsed}
+          focusTokenId={focusTokenId}
+          inspectorTarget={inspectorTarget}
+          palette={colours}
+          profile={profile}
+          project={project}
+          scenes={scenes}
+          selectedLedIds={selectedLedIds}
+          selectedLeds={selectedLeds}
+          selectedGroup={selectedGroup}
+          selectedLayer={selectedLayer}
+          selectedScene={selectedScene}
+          selectedToken={selectedToken}
+          tokenUsageCount={
+            selectedToken
+              ? paletteTokenUsageCount(project, selectedToken.id)
+              : 0
+          }
+          groupUsageCount={
+            selectedGroup
+              ? projectGroupUsageCount(project, selectedGroup.id)
+              : 0
+          }
+          onBrightnessChange={(brightnessPercent, options) => {
+            if (!activeScene) return;
+            onExecuteCommand(
+              {
+                brightnessPercent,
+                ledIds: selectedLedIds,
+                sceneId: activeScene.id,
+                type: 'scene-led-brightness-set',
+              },
+              options,
+            );
+          }}
+          onDeleteScene={() => {
+            if (selectedScene) deleteScene(selectedScene);
+          }}
+          onDeleteGroup={() => {
+            if (
+              !selectedGroup ||
+              projectGroupUsageCount(project, selectedGroup.id) > 0
+            )
+              return;
+            onExecuteCommand({ id: selectedGroup.id, type: 'group-deleted' });
+            setSelectedLedIds([]);
+            setLedSelectionSource({ kind: 'direct' });
+            setInspectorTarget({ kind: 'project' });
+          }}
+          onDeleteLayer={() => {
+            if (!selectedLayer || !activeScene) return;
+            const result = onExecuteCommand({
+              id: selectedLayer.id,
+              sceneId: activeScene.id,
+              type: 'effect-layer-deleted',
+            });
+            if (result.ok && result.changed)
+              setInspectorTarget({ id: activeScene.id, kind: 'scene' });
+          }}
+          onDeleteToken={deleteSelectedToken}
+          onDuplicateScene={() => {
+            if (!selectedScene) return;
+            const command = createSceneDuplicatedCommand(
+              project,
+              selectedScene.id,
+            );
+            executeAndSelectCreated(command, 'scene', command.id);
+          }}
+          onDuplicateGroup={() => {
+            if (!selectedGroup) return;
+            const command = createGroupDuplicatedCommand(
+              project,
+              selectedGroup.id,
+            );
+            const result = onExecuteCommand(command);
+            if (result.ok && result.changed) {
+              const source = project.groups.find(
+                (group) => group.id === selectedGroup.id,
+              )!;
+              setSelectedLedIds(source.ledIds);
+              setLedSelectionSource({ id: command.id, kind: 'project-group' });
+              setInspectorTarget({ id: command.id, kind: 'group' });
+            }
+          }}
+          onDuplicateLayer={() => {
+            if (!selectedLayer || !activeScene) return;
+            const command = createEffectLayerDuplicatedCommand(
+              project,
+              activeScene.id,
+              selectedLayer.id,
+            );
+            const result = onExecuteCommand(command);
+            if (result.ok && result.changed)
+              setInspectorTarget({
+                id: command.newId,
+                kind: 'layer',
+                sceneId: activeScene.id,
+              });
+          }}
+          onMoveLayer={(toIndex) => {
+            if (!selectedLayer || !activeScene) return;
+            onExecuteCommand({
+              id: selectedLayer.id,
+              sceneId: activeScene.id,
+              toIndex,
+              type: 'effect-layer-moved',
+            });
+          }}
+          onDuplicateToken={() => {
+            if (!selectedToken) return;
+            const command = createPaletteTokenDuplicatedCommand(
+              project,
+              selectedToken.id,
+            );
+            executeAndSelectCreated(command, 'palette', command.id);
+          }}
+          onPaint={(paletteTokenId) => {
+            if (!activeScene) return;
+            onExecuteCommand({
+              ledIds: selectedLedIds,
+              paletteTokenId,
+              sceneId: activeScene.id,
+              type: 'scene-leds-painted',
+            });
+          }}
+          onSelectionChange={(ledIds) => {
+            setSelectedLedIds(ledIds);
+            setLedSelectionSource({ kind: 'direct' });
+          }}
+          onToggle={() => togglePanel('right')}
+          onTurnOff={() => {
+            if (!activeScene) return;
+            onExecuteCommand({
+              ledIds: selectedLedIds,
+              sceneId: activeScene.id,
+              type: 'scene-leds-turned-off',
+            });
+          }}
+          onUpdateScene={(changes) => {
+            if (!selectedScene) return;
+            onExecuteCommand({
+              changes,
+              id: selectedScene.id,
+              type: 'scene-updated',
+            });
+          }}
+          onUpdateGroup={(changes) => {
+            if (!selectedGroup) return;
+            onExecuteCommand({
+              changes,
+              id: selectedGroup.id,
+              type: 'group-updated',
+            });
+            if (changes.ledIds) {
+              setLedSelectionSource({
+                id: selectedGroup.id,
+                kind: 'project-group',
+              });
+            }
+          }}
+          onUpdateLayer={(changes, options) => {
+            if (!selectedLayer || !activeScene) return;
+            onExecuteCommand(
+              {
+                changes,
+                id: selectedLayer.id,
+                sceneId: activeScene.id,
+                type: 'effect-layer-updated',
+              },
+              options,
+            );
+          }}
+          onUpdateToken={(changes, options) => {
+            if (!selectedToken) return;
+            onExecuteCommand(
+              {
+                changes,
+                id: selectedToken.id,
+                type: 'palette-token-updated',
+              },
+              options,
+            );
+          }}
+        />
+
+        <WorkspaceResizer
+          collapsed={layout.bottomCollapsed}
+          max={420}
+          min={150}
+          onKeyDown={resizeWithKeyboard}
+          onPointerDown={beginResize}
+          orientation="horizontal"
+          panel="bottom"
+          value={layout.bottomHeight}
+        />
+        <TimelinePanel
+          collapsed={layout.bottomCollapsed}
+          canAddEffect={colours.length > 0}
+          controller={previewController}
+          scene={activeScene}
+          selectedLayerId={
+            inspectorTarget.kind === 'layer' ? inspectorTarget.id : null
+          }
+          timing={project.timing}
+          onAddLayer={addEffectLayer}
+          onSelectLayer={(id) => {
+            if (activeScene)
+              setInspectorTarget({
+                id,
+                kind: 'layer',
+                sceneId: activeScene.id,
+              });
+          }}
+          onUpdateLayer={(id, changes, options) => {
+            if (!activeScene) return;
+            onExecuteCommand(
+              {
+                changes,
+                id,
+                sceneId: activeScene.id,
+                type: 'effect-layer-updated',
+              },
+              options,
+            );
+          }}
+          onToggle={() => togglePanel('bottom')}
+        />
       </div>
     </main>
   );

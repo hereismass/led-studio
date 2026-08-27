@@ -14,6 +14,9 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@led-studio/editor-core':
+        specifier: workspace:*
+        version: link:../../packages/editor-core
       '@led-studio/hardware-profiles':
         specifier: workspace:*
         version: link:../../packages/hardware-profiles
@@ -66,6 +69,22 @@ importers:
       vite:
         specifier: ^8.2.2
         version: 8.2.2
+      vitest:
+        specifier: ^4.1.11
+        version: 4.1.11(jsdom@30.0.1)(vite@8.2.2)
+
+  packages/editor-core:
+    dependencies:
+      '@led-studio/hardware-profiles':
+        specifier: workspace:*
+        version: link:../hardware-profiles
+      '@led-studio/project-format':
+        specifier: workspace:*
+        version: link:../project-format
+    devDependencies:
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
       vitest:
         specifier: ^4.1.11
         version: 4.1.11(jsdom@30.0.1)(vite@8.2.2)

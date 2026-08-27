@@ -1,5 +1,15 @@
 import {
-  createProject,
+  createDefaultProject,
+  createEditorHistory,
+  EditorCommandError,
+  executeEditorCommand,
+  redoEditorHistory,
+  undoEditorHistory,
+  type EditorCommand,
+  type EditorHistory,
+  type ExecuteEditorCommandOptions,
+} from '@led-studio/editor-core';
+import {
   parseProject,
   parseProjectJson,
   ProjectFormatError,
@@ -14,7 +24,6 @@ import {
 } from '@led-studio/hardware-profiles';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AppLifecycleGateway } from './appLifecycle';
-import { applyEditorCommand, type EditorCommand } from './editorCommands';
 import { projectExamples } from './examples';
 import type {
   ProjectFileReference,
@@ -32,25 +41,20 @@ export type ProjectSource =
   | { kind: 'file'; file: ProjectFileReference }
   | { kind: 'new' };
 
-export interface ProjectRevision {
-  project: Project;
-  revision: number;
-}
-
-export interface ActiveProjectSession {
-  future: ProjectRevision[];
-  nextRevision: number;
-  past: ProjectRevision[];
-  present: ProjectRevision;
+export interface ActiveProjectSession extends EditorHistory {
   savedRevision: number | null;
   source: ProjectSource;
 }
+
+export type EditorCommandResult =
+  { changed: boolean; ok: true } | { message: string; ok: false };
 
 export type SaveFeedback =
   { kind: 'error'; message: string } | { kind: 'success'; message: string };
 
 export interface ProjectSessionState {
   activeProject: ActiveProjectSession | null;
+  editorFeedback: string | null;
   launcherError: string | null;
   operation: ProjectOperation;
   saveFeedback: SaveFeedback | null;
@@ -62,7 +66,12 @@ export type ProjectSessionAction =
   | { operation: Exclude<ProjectOperation, 'idle'>; type: 'operation-started' }
   | { type: 'operation-stopped' }
   | { activeProject: ActiveProjectSession; type: 'project-activated' }
-  | { command: EditorCommand; type: 'editor-command-executed' }
+  | {
+      command: EditorCommand;
+      options?: ExecuteEditorCommandOptions;
+      type: 'editor-command-executed';
+    }
+  | { message: string; type: 'editor-command-failed' }
   | { type: 'redo-requested' }
   | { feedback: SaveFeedback; type: 'save-failed' }
   | {
@@ -74,6 +83,7 @@ export type ProjectSessionAction =
 
 export const initialProjectSessionState: ProjectSessionState = {
   activeProject: null,
+  editorFeedback: null,
   launcherError: null,
   operation: 'idle',
   saveFeedback: null,
@@ -94,10 +104,7 @@ export function createActiveProjectSession(
   const parsedProject = parseProject(project);
   validateProjectHardwareReferences(parsedProject);
   return {
-    future: [],
-    nextRevision: 1,
-    past: [],
-    present: { project: parsedProject, revision: 0 },
+    ...createEditorHistory(parsedProject),
     savedRevision,
     source,
   };
@@ -128,6 +135,7 @@ export function projectSessionReducer(
     case 'project-activated':
       return {
         activeProject: action.activeProject,
+        editorFeedback: null,
         launcherError: null,
         operation: 'idle',
         saveFeedback: null,
@@ -137,11 +145,12 @@ export function projectSessionReducer(
         return state;
       }
 
-      const project = applyEditorCommand(
-        state.activeProject.present.project,
+      const transition = executeEditorCommand(
+        state.activeProject,
         action.command,
+        action.options,
       );
-      if (project === state.activeProject.present.project) {
+      if (!transition.changed) {
         return state;
       }
 
@@ -149,46 +158,41 @@ export function projectSessionReducer(
         ...state,
         activeProject: {
           ...state.activeProject,
-          future: [],
-          nextRevision: state.activeProject.nextRevision + 1,
-          past: [...state.activeProject.past, state.activeProject.present],
-          present: {
-            project,
-            revision: state.activeProject.nextRevision,
-          },
+          ...transition.history,
         },
+        editorFeedback: null,
         saveFeedback: null,
       };
     }
+    case 'editor-command-failed':
+      return { ...state, editorFeedback: action.message };
     case 'undo-requested': {
       const activeProject = state.activeProject;
-      if (!activeProject || activeProject.past.length === 0) return state;
-
-      const present = activeProject.past.at(-1)!;
+      if (!activeProject) return state;
+      const history = undoEditorHistory(activeProject);
+      if (history === activeProject) return state;
       return {
         ...state,
         activeProject: {
           ...activeProject,
-          future: [activeProject.present, ...activeProject.future],
-          past: activeProject.past.slice(0, -1),
-          present,
+          ...history,
         },
+        editorFeedback: null,
         saveFeedback: null,
       };
     }
     case 'redo-requested': {
       const activeProject = state.activeProject;
-      if (!activeProject || activeProject.future.length === 0) return state;
-
-      const [present, ...future] = activeProject.future;
+      if (!activeProject) return state;
+      const history = redoEditorHistory(activeProject);
+      if (history === activeProject) return state;
       return {
         ...state,
         activeProject: {
           ...activeProject,
-          future,
-          past: [...activeProject.past, activeProject.present],
-          present,
+          ...history,
         },
+        editorFeedback: null,
         saveFeedback: null,
       };
     }
@@ -446,11 +450,7 @@ export function useProjectSession({
 
     dispatch({
       activeProject: createActiveProjectSession(
-        createProject({
-          hardwareProfile: DEFAULT_HARDWARE_PROFILE,
-          initialSceneLedIds: profile.leds.map((led) => led.id),
-          name: 'Untitled Project',
-        }),
+        createDefaultProject({ name: 'Untitled Project', profile }),
         { kind: 'new' },
         null,
       ),
@@ -526,9 +526,33 @@ export function useProjectSession({
   }, [beginOperation, dispatch, projectStorage]);
 
   const executeCommand = useCallback(
-    (command: EditorCommand) => {
-      if (stateRef.current.activeProject) {
-        dispatch({ command, type: 'editor-command-executed' });
+    (
+      command: EditorCommand,
+      options?: ExecuteEditorCommandOptions,
+    ): EditorCommandResult => {
+      if (!stateRef.current.activeProject) {
+        return { message: 'No project is open.', ok: false };
+      }
+
+      const previousRevision = stateRef.current.activeProject.present.revision;
+      try {
+        dispatch({ command, options, type: 'editor-command-executed' });
+        return {
+          changed:
+            stateRef.current.activeProject?.present.revision !==
+            previousRevision,
+          ok: true,
+        };
+      } catch (error) {
+        if (!(error instanceof EditorCommandError)) {
+          console.error('Could not apply editor command', error);
+        }
+        const message =
+          error instanceof Error
+            ? error.message
+            : 'LED Studio could not apply that change.';
+        dispatch({ message, type: 'editor-command-failed' });
+        return { message, ok: false };
       }
     },
     [dispatch],

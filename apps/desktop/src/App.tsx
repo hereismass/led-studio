@@ -5,6 +5,7 @@ import {
 } from './appLifecycle';
 import { ProjectLauncher } from './ProjectLauncher';
 import { ProjectWorkspace } from './ProjectWorkspace';
+import { WorkspaceErrorBoundary } from './WorkspaceErrorBoundary';
 import {
   nativeProjectStorageGateway,
   nativeUnsavedChangesGateway,
@@ -65,19 +66,26 @@ export function App({
 
   if (activeProject) {
     return (
-      <ProjectWorkspace
-        activeProject={activeProject}
-        canRedo={activeProject.future.length > 0}
-        canUndo={activeProject.past.length > 0}
-        operation={session.state.operation}
-        onChooseAnother={() => void session.requestChooseAnother()}
-        onExecuteCommand={session.executeCommand}
-        onRedo={session.redo}
-        onSave={() => void session.save()}
+      <WorkspaceErrorBoundary
+        disabled={session.state.operation !== 'idle'}
+        onReturn={() => void session.requestChooseAnother()}
         onSaveAs={() => void session.save(true)}
-        onUndo={session.undo}
-        saveFeedback={session.state.saveFeedback}
-      />
+      >
+        <ProjectWorkspace
+          activeProject={activeProject}
+          canRedo={activeProject.future.length > 0}
+          canUndo={activeProject.past.length > 0}
+          editorFeedback={session.state.editorFeedback}
+          operation={session.state.operation}
+          onChooseAnother={() => void session.requestChooseAnother()}
+          onExecuteCommand={session.executeCommand}
+          onRedo={session.redo}
+          onSave={() => void session.save()}
+          onSaveAs={() => void session.save(true)}
+          onUndo={session.undo}
+          saveFeedback={session.state.saveFeedback}
+        />
+      </WorkspaceErrorBoundary>
     );
   }
 

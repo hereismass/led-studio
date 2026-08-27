@@ -4,15 +4,17 @@ LED Studio separates persisted project data, transient editor state, native appl
 
 ## Project data
 
-`packages/project-format` owns the versioned project document, validation, parsing, and serialization. It has no dependency on React, Tauri, a particular instrument, or editor state. `packages/hardware-profiles` owns validated profile geometry, physical addresses, stable LED IDs, and built-in selection groups. Projects reference profiles by opaque ID and are cross-validated against the registry when activated.
+`packages/project-format` owns the project document, validation, parsing, and serialization. It has no dependency on React, Tauri, a particular instrument, or editor state. `packages/hardware-profiles` owns validated profile geometry, physical addresses, stable LED IDs, and built-in selection groups. Projects reference profiles by opaque ID and are cross-validated against the registry when activated. During active development, schema v2 may change without migrations; a compatibility policy is deliberately deferred.
 
-The desktop project-session controller owns the active document and immutable revision history. Every committed editor command creates a revision with a stable ID; undo and redo move between those revisions, while dirty state compares the current revision ID with the last-saved one. Saving captures a specific revision, so edits made while a save is running remain dirty. Native project paths stay in Rust and are represented in the webview by opaque handles.
+`packages/editor-core` owns default project creation, editor command application, and immutable revision history. Commands carry the IDs of entities they create, making outcomes explicit and testable. Untouched project branches retain referential identity, semantic no-ops create no revisions, and history retains at most 200 undo steps. Updates from one continuous interaction share a group ID and replace the current grouped revision, so a drag remains one undo step.
+
+The desktop project-session controller combines that core history with file source, saved revision, and operation feedback. Undo and redo move between revisions, while dirty state compares the current revision ID with the last-saved one. Saving captures a specific revision, so edits made while a save is running remain dirty. Native project paths stay in Rust and are represented in the webview by opaque handles.
 
 ## User interface
 
-React owns application layout, controls, inspectors, and low-frequency state presentation. Presentational components receive state and commands from the project-session controller; they do not perform filesystem or lifecycle work directly. Active scene, selected LEDs, inspector target, and panel dimensions are transient UI state and never enter project files.
+React owns application layout, controls, inspectors, and low-frequency state presentation. Presentational components receive state and commands from the project-session controller; they do not perform filesystem or lifecycle work directly. Active scene, selected LEDs, the source of an LED selection, inspector target, and panel dimensions are transient UI state and never enter project files.
 
-Pure editor commands apply validated project mutations without depending on React or Tauri. Text fields keep temporary drafts locally and dispatch one command when an edit is committed, preventing keystrokes from flooding revision history.
+Text fields keep temporary drafts locally and dispatch one command when an edit is committed. Continuous sliders and native colour input preview live at most once per animation frame and share one history group. Workspace rendering is split into panel components and hooks for layout, selection, and preview lifecycle; the project-session hook remains the mutation boundary.
 
 Workspace panel sizes and collapsed state are versioned local application preferences. They are deliberately separate from project data so opening a project does not change the user's editor layout.
 
@@ -20,13 +22,15 @@ No additional global state library is needed while a reducer and controller hook
 
 ## Playback and rendering
 
-`packages/playback` owns deterministic loop timing and scene evaluation. Given a scene, palette, hardware profile, and explicit musical position, it produces a complete LED frame without depending on React, Tauri, or wall-clock time.
+`packages/playback` owns deterministic loop timing and scene evaluation. It compiles a scene, palette, project groups, and hardware profile into an evaluator, validating and indexing references once. Given an explicit musical position, the evaluator composites the static base with ordered Pulse and Chase layers and produces a complete LED frame without depending on React, Tauri, or wall-clock time. Layer zero is topmost; Pulse replaces every targeted LED while active, and Chase replaces only its head and fading trail.
 
-The desktop preview controller owns the transient clock and transport state. It advances with `requestAnimationFrame` and exposes an external subscription store, so only the timeline and hardware-preview adapters refresh while playback runs. Play, pause, stop, and seek never create project revisions. Project tempo and scene-loop edits reconfigure the running preview without restarting its phase; selecting another scene stops and resets it.
+The desktop preview controller owns the transient clock and transport state. It advances with `requestAnimationFrame` and exposes small external-store selectors. Playback buttons subscribe only to status; static fretboards do not subscribe to position, while animated fretboards and the timeline playhead refresh each tick. Play, pause, stop, and seek never create project revisions. Project tempo and scene-loop edits reconfigure the running preview without restarting its phase; selecting another scene stops and resets it.
 
-The current evaluator is intentionally static at every loop position. Future effect and keyframe variants can extend deterministic evaluation without moving timing rules into UI components. Persisted preview tempo remains an editing default; any future external tempo override must remain transient runtime state.
+Effect evaluation remains independent from the rendering surface and caches repeat requests for the same position. Future keyframe variants can extend the same centralized compositing model. Persisted preview tempo remains an editing default; any future external tempo override must remain transient runtime state.
 
 The 10-LED hardware surface remains SVG because it benefits from native accessibility and direct interaction. Dense animation timelines may use Canvas or WebGL when introduced. Work should move to a Web Worker only when profiling shows that evaluation or serialization blocks the UI.
+
+A React error boundary surrounds the project workspace. If rendering fails, the active session remains above the boundary and offers Retry, Save As, and Return to projects recovery actions.
 
 ## Native boundary
 

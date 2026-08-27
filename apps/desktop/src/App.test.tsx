@@ -283,6 +283,12 @@ describe('App project launcher and lifecycle', () => {
     await user.click(
       screen.getByRole('button', { name: /KMS 4-String Bass Example/i }),
     );
+    await user.click(
+      screen.getByRole('button', { name: 'Upper Marker Pulse' }),
+    );
+    await user.click(screen.getByRole('checkbox', { name: 'Enabled' }));
+    await user.click(screen.getByRole('button', { name: 'E-side Chase' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Enabled' }));
     await user.click(screen.getByRole('button', { name: /All LEDs.*10/i }));
     expect(
       screen.getByRole('heading', { name: '10 LEDs selected' }),
@@ -302,6 +308,66 @@ describe('App project launcher and lifecycle', () => {
         name: /Fret 21 G-side LED, address 0, off/i,
       }),
     ).toBeInTheDocument();
+  });
+
+  it('creates linked LED groups and edits a Pulse layer from the timeline', async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await user.click(screen.getByRole('button', { name: /new project/i }));
+
+    await user.click(screen.getByRole('button', { name: /G-side LEDs.*5/i }));
+    await user.click(
+      screen.getByRole('button', { name: 'Add group from selection' }),
+    );
+    expect(
+      screen.getByRole('heading', { name: 'New Group' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /New Group.*5/i }),
+    ).toBeInTheDocument();
+    await user.click(
+      screen.getByRole('button', { name: 'Edit members on fretboard' }),
+    );
+    await user.click(
+      screen.getByRole('button', { name: /Fret 21 G-side LED/i }),
+    );
+    await user.click(screen.getByRole('button', { name: 'Save members' }));
+    expect(
+      screen.getByRole('option', { name: /New Group.*1 LEDs/i }),
+    ).toBeInTheDocument();
+
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: 'Add effect' }),
+      'pulse',
+    );
+    expect(
+      screen.getByRole('button', { name: 'Pulse, 0 to 4 beats' }),
+    ).toBeInTheDocument();
+    expect(
+      (
+        screen.getByRole('combobox', {
+          name: 'Effect target',
+        }) as HTMLSelectElement
+      ).value,
+    ).toMatch(/^project-group:/);
+
+    fireEvent.keyDown(
+      screen.getByRole('button', { name: 'Resize start of Pulse' }),
+      { key: 'ArrowRight' },
+    );
+    expect(screen.getByRole('spinbutton', { name: 'Start beat' })).toHaveValue(
+      0.25,
+    );
+    await user.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(screen.getByRole('spinbutton', { name: 'Start beat' })).toHaveValue(
+      0,
+    );
+
+    await user.click(screen.getByRole('checkbox', { name: 'Locked' }));
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: 'Resize start of Pulse' }),
+    ).toBeDisabled();
   });
 
   it('edits project-wide preview timing', async () => {

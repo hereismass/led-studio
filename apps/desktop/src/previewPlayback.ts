@@ -47,6 +47,11 @@ export class PreviewPlaybackController {
 
   readonly getSnapshot = (): PreviewPlaybackSnapshot => this.snapshot;
 
+  readonly getPositionSnapshot = (): number => this.snapshot.positionBeats;
+
+  readonly getStatusSnapshot = (): PreviewPlaybackStatus =>
+    this.snapshot.status;
+
   readonly subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);

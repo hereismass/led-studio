@@ -101,4 +101,47 @@ describe('project hardware compatibility', () => {
       }),
     ).toThrow(/missing-led/);
   });
+
+  it('validates project groups and effect targets against the active profile', () => {
+    expect(() =>
+      validateProjectHardwareReferences({
+        groups: [{ id: 'group', ledIds: ['missing-led'], name: 'Bad group' }],
+        hardwareProfile: kmsFourString10LedProfile.id,
+        scenes: [],
+      }),
+    ).toThrow(/Bad group.*missing-led/);
+
+    expect(() =>
+      validateProjectHardwareReferences({
+        groups: [],
+        hardwareProfile: kmsFourString10LedProfile.id,
+        scenes: [
+          {
+            layers: [
+              {
+                name: 'Bad layer',
+                target: { groupId: 'missing-group', kind: 'profile-group' },
+              },
+            ],
+            ledStates: {},
+            name: 'Scene',
+          },
+        ],
+      }),
+    ).toThrow(/missing-group/);
+
+    expect(() =>
+      validateProjectHardwareReferences({
+        groups: [
+          {
+            id: 'group',
+            ledIds: ['fret-19-g-side', 'fret-21-g-side'],
+            name: 'Out of order',
+          },
+        ],
+        hardwareProfile: kmsFourString10LedProfile.id,
+        scenes: [],
+      }),
+    ).toThrow(/hardware address order/);
+  });
 });

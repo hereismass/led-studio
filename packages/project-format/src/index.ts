@@ -2,6 +2,11 @@ import { z } from 'zod';
 
 export const PROJECT_SCHEMA_VERSION = 2 as const;
 
+export const ProjectNameSchema = z
+  .string()
+  .trim()
+  .min(1, 'Project name cannot be empty');
+
 export const ProjectEntityIdSchema = z
   .string()
   .regex(
@@ -56,43 +61,186 @@ export const DEFAULT_PROJECT_TIMING = {
   timeSignature: { denominator: 4, numerator: 4 },
 } as const;
 
+export const SceneBrightnessPercentSchema = z.number().int().min(1).max(100);
+
 export const SceneLedStateSchema = z
   .object({
-    brightnessPercent: z.number().int().min(1).max(100),
+    brightnessPercent: SceneBrightnessPercentSchema,
     paletteTokenId: PaletteTokenIdSchema,
   })
   .strict();
 
-export const SceneSchema = z
+export const SceneLoopLengthSchema = z
+  .number()
+  .positive()
+  .refine((value) => Number.isInteger(value * 4), {
+    message: 'Scene loop length must use quarter-beat increments',
+  });
+
+export const SceneNameSchema = z
+  .string()
+  .trim()
+  .min(1, 'Scene names cannot be empty');
+
+export const QuarterBeatSchema = z
+  .number()
+  .nonnegative()
+  .refine((value) => Number.isInteger(value * 4), {
+    message: 'Timing values must use quarter-beat increments',
+  });
+
+export const PositiveQuarterBeatSchema = QuarterBeatSchema.refine(
+  (value) => value >= 0.25,
+  { message: 'Timing values must be at least 0.25 beats' },
+);
+
+export const ProjectGroupNameSchema = z
+  .string()
+  .trim()
+  .min(1, 'Group names cannot be empty');
+
+export const ProjectGroupSchema = z
   .object({
     id: ProjectEntityIdSchema,
-    ledStates: z.record(z.string().trim().min(1), SceneLedStateSchema),
-    loopLengthBeats: z
-      .number()
-      .positive()
-      .refine((value) => Number.isInteger(value * 4), {
-        message: 'Scene loop length must use quarter-beat increments',
-      }),
-    name: z.string().trim().min(1, 'Scene names cannot be empty'),
+    ledIds: z.array(z.string().trim().min(1)).min(1),
+    name: ProjectGroupNameSchema,
+  })
+  .strict()
+  .superRefine((group, context) => {
+    const ledIds = new Set<string>();
+    group.ledIds.forEach((ledId, index) => {
+      if (ledIds.has(ledId)) {
+        context.addIssue({
+          code: 'custom',
+          message: `Group contains LED "${ledId}" more than once`,
+          path: ['ledIds', index],
+        });
+      }
+      ledIds.add(ledId);
+    });
+  });
+
+export const DirectLedTargetSchema = z
+  .object({
+    kind: z.literal('leds'),
+    ledIds: z.array(z.string().trim().min(1)).min(1),
+  })
+  .strict()
+  .superRefine((target, context) => {
+    const ledIds = new Set<string>();
+    target.ledIds.forEach((ledId, index) => {
+      if (ledIds.has(ledId)) {
+        context.addIssue({
+          code: 'custom',
+          message: `Target contains LED "${ledId}" more than once`,
+          path: ['ledIds', index],
+        });
+      }
+      ledIds.add(ledId);
+    });
+  });
+
+export const ProfileGroupTargetSchema = z
+  .object({
+    groupId: z.string().trim().min(1),
+    kind: z.literal('profile-group'),
   })
   .strict();
 
-const ReservedCollectionSchema = z
+export const ProjectGroupTargetSchema = z
+  .object({ groupId: ProjectEntityIdSchema, kind: z.literal('project-group') })
+  .strict();
+
+export const EffectTargetSchema = z.discriminatedUnion('kind', [
+  DirectLedTargetSchema,
+  ProfileGroupTargetSchema,
+  ProjectGroupTargetSchema,
+]);
+
+export const PulseEffectSchema = z
+  .object({
+    cycleLengthBeats: PositiveQuarterBeatSchema,
+    maxBrightnessPercent: z.number().int().min(0).max(100),
+    minBrightnessPercent: z.number().int().min(0).max(100),
+    paletteTokenId: PaletteTokenIdSchema,
+    phaseOffsetBeats: QuarterBeatSchema,
+    type: z.literal('pulse'),
+    waveform: z.enum(['sine', 'triangle', 'square']),
+  })
+  .strict()
+  .refine(
+    (effect) => effect.minBrightnessPercent <= effect.maxBrightnessPercent,
+    {
+      message: 'Pulse minimum brightness cannot exceed maximum brightness',
+      path: ['minBrightnessPercent'],
+    },
+  );
+
+export const ChaseEffectSchema = z
+  .object({
+    brightnessPercent: z.number().int().min(0).max(100),
+    direction: z.enum(['forward', 'reverse']),
+    paletteTokenId: PaletteTokenIdSchema,
+    stepLengthBeats: PositiveQuarterBeatSchema,
+    trailLength: z.number().int().min(0),
+    type: z.literal('chase'),
+    width: z.number().int().min(1),
+  })
+  .strict();
+
+export const EffectSchema = z.discriminatedUnion('type', [
+  PulseEffectSchema,
+  ChaseEffectSchema,
+]);
+
+export const EffectLayerNameSchema = z
+  .string()
+  .trim()
+  .min(1, 'Effect layer names cannot be empty');
+
+export const EffectLayerSchema = z
+  .object({
+    effect: EffectSchema,
+    enabled: z.boolean(),
+    endBeat: PositiveQuarterBeatSchema,
+    id: ProjectEntityIdSchema,
+    locked: z.boolean(),
+    name: EffectLayerNameSchema,
+    startBeat: QuarterBeatSchema,
+    target: EffectTargetSchema,
+  })
+  .strict()
+  .refine((layer) => layer.endBeat > layer.startBeat, {
+    message: 'Effect layer end must be after its start',
+    path: ['endBeat'],
+  });
+
+export const SceneSchema = z
+  .object({
+    id: ProjectEntityIdSchema,
+    layers: z.array(EffectLayerSchema).default([]),
+    ledStates: z.record(z.string().trim().min(1), SceneLedStateSchema),
+    loopLengthBeats: SceneLoopLengthSchema,
+    name: SceneNameSchema,
+  })
+  .strict();
+
+const ReservedSequenceSchema = z
   .array(z.never())
   .max(0, 'This collection is reserved and must remain empty');
 
 export const ProjectSchema = z
   .object({
     schemaVersion: z.literal(PROJECT_SCHEMA_VERSION),
-    name: z.string().trim().min(1, 'Project name cannot be empty'),
+    name: ProjectNameSchema,
     hardwareProfile: z
       .string()
       .trim()
       .min(1, 'Hardware profile cannot be empty'),
     palette: z.array(PaletteTokenSchema),
     scenes: z.array(SceneSchema),
-    sequence: ReservedCollectionSchema,
-    groups: ReservedCollectionSchema,
+    sequence: ReservedSequenceSchema,
+    groups: z.array(ProjectGroupSchema),
     timing: ProjectTimingSchema.default(DEFAULT_PROJECT_TIMING),
   })
   .strict()
@@ -121,17 +269,38 @@ export const ProjectSchema = z
       names.add(normalizedName);
     });
 
-    const sceneIds = new Set<string>();
-    const sceneNames = new Set<string>();
-    project.scenes.forEach((scene, sceneIndex) => {
-      if (sceneIds.has(scene.id)) {
+    const entityIds = new Set(ids);
+    const groupNames = new Set<string>();
+    project.groups.forEach((group, groupIndex) => {
+      if (entityIds.has(group.id)) {
         context.addIssue({
           code: 'custom',
-          message: `Scene ID "${scene.id}" is already in use`,
+          message: `Entity ID "${group.id}" is already in use`,
+          path: ['groups', groupIndex, 'id'],
+        });
+      }
+      entityIds.add(group.id);
+      const name = group.name.toLowerCase();
+      if (groupNames.has(name)) {
+        context.addIssue({
+          code: 'custom',
+          message: `Group name "${group.name}" is already in use`,
+          path: ['groups', groupIndex, 'name'],
+        });
+      }
+      groupNames.add(name);
+    });
+
+    const sceneNames = new Set<string>();
+    project.scenes.forEach((scene, sceneIndex) => {
+      if (entityIds.has(scene.id)) {
+        context.addIssue({
+          code: 'custom',
+          message: `Entity ID "${scene.id}" is already in use`,
           path: ['scenes', sceneIndex, 'id'],
         });
       }
-      sceneIds.add(scene.id);
+      entityIds.add(scene.id);
 
       const normalizedSceneName = scene.name.toLowerCase();
       if (sceneNames.has(normalizedSceneName)) {
@@ -158,11 +327,80 @@ export const ProjectSchema = z
           });
         }
       });
+
+      const layerNames = new Set<string>();
+      scene.layers.forEach((layer, layerIndex) => {
+        if (entityIds.has(layer.id)) {
+          context.addIssue({
+            code: 'custom',
+            message: `Entity ID "${layer.id}" is already in use`,
+            path: ['scenes', sceneIndex, 'layers', layerIndex, 'id'],
+          });
+        }
+        entityIds.add(layer.id);
+
+        const layerName = layer.name.toLowerCase();
+        if (layerNames.has(layerName)) {
+          context.addIssue({
+            code: 'custom',
+            message: `Effect layer name "${layer.name}" is already in use`,
+            path: ['scenes', sceneIndex, 'layers', layerIndex, 'name'],
+          });
+        }
+        layerNames.add(layerName);
+
+        if (layer.endBeat > scene.loopLengthBeats) {
+          context.addIssue({
+            code: 'custom',
+            message: 'Effect layer must end within the scene loop',
+            path: ['scenes', sceneIndex, 'layers', layerIndex, 'endBeat'],
+          });
+        }
+        if (!ids.has(layer.effect.paletteTokenId)) {
+          context.addIssue({
+            code: 'custom',
+            message: `Effect layer references unknown palette token "${layer.effect.paletteTokenId}"`,
+            path: [
+              'scenes',
+              sceneIndex,
+              'layers',
+              layerIndex,
+              'effect',
+              'paletteTokenId',
+            ],
+          });
+        }
+        const projectGroupId =
+          layer.target.kind === 'project-group' ? layer.target.groupId : null;
+        if (
+          projectGroupId !== null &&
+          !project.groups.some((group) => group.id === projectGroupId)
+        ) {
+          context.addIssue({
+            code: 'custom',
+            message: `Effect layer references unknown project group "${projectGroupId}"`,
+            path: [
+              'scenes',
+              sceneIndex,
+              'layers',
+              layerIndex,
+              'target',
+              'groupId',
+            ],
+          });
+        }
+      });
     });
   });
 
+export type ChaseEffect = z.infer<typeof ChaseEffectSchema>;
+export type Effect = z.infer<typeof EffectSchema>;
+export type EffectLayer = z.infer<typeof EffectLayerSchema>;
+export type EffectTarget = z.infer<typeof EffectTargetSchema>;
 export type PaletteToken = z.infer<typeof PaletteTokenSchema>;
 export type ProjectTiming = z.infer<typeof ProjectTimingSchema>;
+export type ProjectGroup = z.infer<typeof ProjectGroupSchema>;
+export type PulseEffect = z.infer<typeof PulseEffectSchema>;
 export type Scene = z.infer<typeof SceneSchema>;
 export type SceneLedState = z.infer<typeof SceneLedStateSchema>;
 export type Project = z.infer<typeof ProjectSchema>;
@@ -190,18 +428,6 @@ export class ProjectFormatError extends Error {
     this.issues = issues;
   }
 }
-
-export interface CreateProjectInput {
-  initialSceneLedIds?: readonly string[];
-  name: string;
-  hardwareProfile: string;
-}
-
-export function generateProjectEntityId(): string {
-  return globalThis.crypto.randomUUID();
-}
-
-export const generatePaletteTokenId = generateProjectEntityId;
 
 function unsupportedVersionIssue(
   input: unknown,
@@ -271,40 +497,4 @@ export function parseProjectJson(json: string): Project {
 
 export function serializeProject(project: Project): string {
   return `${JSON.stringify(parseProject(project), null, 2)}\n`;
-}
-
-export function createProject({
-  initialSceneLedIds = [],
-  name,
-  hardwareProfile,
-}: CreateProjectInput): Project {
-  const whiteTokenId = generateProjectEntityId();
-  return parseProject({
-    schemaVersion: PROJECT_SCHEMA_VERSION,
-    name,
-    hardwareProfile,
-    palette: [
-      {
-        id: whiteTokenId,
-        name: 'White',
-        value: '#FFFFFF',
-      },
-    ],
-    scenes: [
-      {
-        id: generateProjectEntityId(),
-        ledStates: Object.fromEntries(
-          initialSceneLedIds.map((ledId) => [
-            ledId,
-            { brightnessPercent: 100, paletteTokenId: whiteTokenId },
-          ]),
-        ),
-        loopLengthBeats: 4,
-        name: 'Scene 1',
-      },
-    ],
-    sequence: [],
-    groups: [],
-    timing: DEFAULT_PROJECT_TIMING,
-  });
 }

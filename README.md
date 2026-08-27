@@ -10,6 +10,7 @@ This repository is a pnpm workspace so it can also contain controller firmware a
 
 - `apps/desktop` — Tauri v2, React, and TypeScript desktop application
 - `packages/project-format` — UI-independent project validation and TypeScript types
+- `packages/editor-core` — UI-independent project creation, editor commands, and bounded grouped history
 - `packages/hardware-profiles` — UI-independent hardware geometry, addressing, groups, and compatibility validation
 - `packages/playback` — UI-independent scene timing and LED-frame evaluation
 - `examples` — example LED Studio project files
@@ -34,11 +35,11 @@ The second command starts the Vite development server and opens it in a Tauri wi
 
 On startup, choose to create an untitled project, open and validate a local project, or load a bundled example as an unsaved template. Save atomically replaces the current file, while Save As chooses a new `.ledstudio` destination. New and example-derived projects use Save As for their first save. The app also accepts `.json` files when opening. Closing the window or quitting prompts before discarding unsaved work.
 
-Inside a project, the name, preview BPM, time signature, linked palette colours, and reusable static scenes are editable. New projects start with a four-beat `Scene 1` in which every profile LED is white at full brightness. Palette tokens and scenes have hidden, stable UUIDs. Scene LEDs reference palette tokens, store integer brightness percentages, and remain off when no state is present. Project edits support Undo and Redo from the toolbar or with <kbd>⌘Z</kbd> and <kbd>⌘⇧Z</kbd> on macOS.
+Inside a project, the name, preview BPM, time signature, linked palette colours, reusable LED groups, and scenes are editable. New projects start with a four-beat `Scene 1` in which every profile LED is white at full brightness. Palette tokens, groups, scenes, and effect layers have hidden, stable UUIDs. A scene combines sparse static LED assignments with ordered Pulse and Chase layers; layers can target LEDs directly or remain linked to built-in or project groups. Project edits support Undo and Redo from the toolbar or with <kbd>⌘Z</kbd> and <kbd>⌘⇧Z</kbd> on macOS. History retains the latest 200 undo steps; live controls and timeline drags are grouped into one undoable interaction.
 
 The KMS profile renders an interactive, physically proportioned four-string fretboard with 10 LEDs and built-in E-side and G-side selection groups. The electrical chain starts at fret 21 on the G side, crosses to the E side at fret 12, and ends at fret 3.
 
-The active scene can be previewed with Play/Pause, Stop, and the Scene Timeline scrubber. Preview playback loops at the project BPM, updates immediately while scene LEDs or timing are edited, and remains transient rather than changing the project file. Press <kbd>Space</kbd> to toggle playback when focus is not inside an interactive editor control. The current evaluator renders the scene's static LED frame at every position; effect and keyframe animation come in later milestones.
+The active scene can be previewed with Play/Pause, Stop, and the Scene Timeline scrubber. Preview playback loops at the project BPM, updates immediately while scene LEDs, groups, effects, or timing are edited, and remains transient rather than changing the project file. Press <kbd>Space</kbd> to toggle playback when focus is not inside an interactive editor control. Static scenes stay off the animation-frame render path; animated scenes use the UI-independent evaluator.
 
 ## Tests and checks
 
@@ -65,7 +66,7 @@ pnpm build
 
 ## Project format
 
-Version 2 contains a schema version, required project name, opaque hardware-profile identifier, project-wide preview timing, an ordered array of linked palette tokens, reusable static scenes, and empty collections reserved for sequence items and user groups. Each palette token has an opaque UUID v4 ID, a unique display name, and an uppercase six-digit hexadecimal value. Scenes have unique UUIDs and names, a loop length in quarter-beat steps, and sparse per-LED palette and brightness assignments. Earlier v2 documents without timing load with a 120 BPM, 4/4 default. Version 1 files remain intentionally unsupported.
+Version 2 contains a schema version, required project name, opaque hardware-profile identifier, project-wide preview timing, linked palette tokens, project-wide LED groups, scenes, and an empty collection reserved for sequence items. Scenes have unique UUIDs and names, a loop length in quarter-beat steps, sparse static LED assignments, and ordered typed effect layers. Earlier v2 scenes without `layers` load with an empty layer list, and documents without timing load with a 120 BPM, 4/4 default. Version 1 files remain intentionally unsupported.
 
 Hardware profiles describe LED numbering and physical layout separately; the project format does not embed instrument-specific geometry.
 
@@ -73,4 +74,4 @@ Project files are JSON documents validated at runtime with Zod and use the `.led
 
 ## Deliberately out of scope
 
-There is currently no palette or scene reordering, autosave, recovery backup, native File menu, animation/layer system, show sequence, song model, MIDI or Ableton integration, Bluetooth, USB communication, OLED or footswitch support, firmware, device-package export, external backend, cloud service, account system, database, or external API.
+There is currently no palette or scene reordering, autosave, recovery backup, native File menu, keyframe system, blend modes, show sequence, song model, MIDI or Ableton integration, Bluetooth, USB communication, OLED or footswitch support, firmware, device-package export, external backend, cloud service, account system, database, or external API.

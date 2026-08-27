@@ -1,7 +1,7 @@
 import type { HardwareProfile } from '@led-studio/hardware-profiles';
 import type { LedFrame } from '@led-studio/playback';
 import type { Scene } from '@led-studio/project-format';
-import { useState, type KeyboardEvent, type PointerEvent } from 'react';
+import { memo, useState, type KeyboardEvent, type PointerEvent } from 'react';
 
 const VIEWBOX_WIDTH = 1000;
 const VIEWBOX_HEIGHT = 280;
@@ -9,6 +9,10 @@ const BOARD_LEFT = 40;
 const BOARD_WIDTH = 920;
 const BOARD_TOP = 44;
 const BOARD_HEIGHT = 176;
+
+function displayBrightness(value: number): string {
+  return String(Math.round(value * 10) / 10);
+}
 
 interface Point {
   x: number;
@@ -48,6 +52,90 @@ function ledPoint(position: { x: number; y: number }): Point {
   };
 }
 
+const FretboardGeometry = memo(function FretboardGeometry({
+  profile,
+}: {
+  profile: HardwareProfile;
+}) {
+  return (
+    <>
+      <defs>
+        <linearGradient id="neck-fill" x1="0" x2="1">
+          <stop offset="0" stopColor="#211b22" />
+          <stop offset="1" stopColor="#34262c" />
+        </linearGradient>
+        <filter id="led-glow" x="-200%" y="-200%" width="500%" height="500%">
+          <feGaussianBlur stdDeviation="5" result="blur" />
+          <feMerge>
+            <feMergeNode in="blur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+      </defs>
+      <rect
+        className="fretboard-neck"
+        x={BOARD_LEFT}
+        y={BOARD_TOP}
+        width={BOARD_WIDTH}
+        height={BOARD_HEIGHT}
+        rx="7"
+      />
+      {profile.layout.fretBoundaries.map((boundary, index) => {
+        const x = BOARD_LEFT + boundary * BOARD_WIDTH;
+        return (
+          <line
+            className={
+              index === 0
+                ? 'fretboard-body-edge'
+                : index === profile.layout.fretCount
+                  ? 'fretboard-nut'
+                  : 'fretboard-fret'
+            }
+            key={`boundary-${index}`}
+            x1={x}
+            x2={x}
+            y1={BOARD_TOP}
+            y2={BOARD_TOP + BOARD_HEIGHT}
+          />
+        );
+      })}
+      {Array.from({ length: profile.layout.stringCount }, (_, index) => {
+        const y =
+          BOARD_TOP +
+          ((index + 1) / (profile.layout.stringCount + 1)) * BOARD_HEIGHT;
+        return (
+          <line
+            className="fretboard-string"
+            key={`string-${index}`}
+            x1={BOARD_LEFT}
+            x2={BOARD_LEFT + BOARD_WIDTH}
+            y1={y}
+            y2={y}
+          />
+        );
+      })}
+      {Array.from({ length: profile.layout.fretCount }, (_, fretIndex) => {
+        const x =
+          BOARD_LEFT +
+          ((profile.layout.fretBoundaries[fretIndex] +
+            profile.layout.fretBoundaries[fretIndex + 1]) /
+            2) *
+            BOARD_WIDTH;
+        return (
+          <text
+            className="fretboard-label"
+            key={`label-${fretIndex}`}
+            x={x}
+            y={248}
+          >
+            {fretIndex + 1}
+          </text>
+        );
+      })}
+    </>
+  );
+});
+
 export function FretboardEditor({
   frame,
   onSelectionChange,
@@ -78,7 +166,11 @@ export function FretboardEditor({
     if (!svg) return;
     event.currentTarget.setPointerCapture(event.pointerId);
     const start = viewPoint(svg, event.clientX, event.clientY);
-    setMarquee({ additive: event.shiftKey, current: start, start });
+    setMarquee({
+      additive: event.shiftKey || event.metaKey || event.ctrlKey,
+      current: start,
+      start,
+    });
   }
 
   function moveMarquee(event: PointerEvent<SVGRectElement>) {
@@ -122,7 +214,7 @@ export function FretboardEditor({
   function handleLedKey(event: KeyboardEvent<SVGGElement>, id: string) {
     if (event.key !== 'Enter' && event.key !== ' ') return;
     event.preventDefault();
-    selectLed(id, event.shiftKey);
+    selectLed(id, event.shiftKey || event.metaKey || event.ctrlKey);
   }
 
   const marqueeRect = marquee
@@ -142,79 +234,7 @@ export function FretboardEditor({
         role="group"
         viewBox={`0 0 ${VIEWBOX_WIDTH} ${VIEWBOX_HEIGHT}`}
       >
-        <defs>
-          <linearGradient id="neck-fill" x1="0" x2="1">
-            <stop offset="0" stopColor="#211b22" />
-            <stop offset="1" stopColor="#34262c" />
-          </linearGradient>
-          <filter id="led-glow" x="-200%" y="-200%" width="500%" height="500%">
-            <feGaussianBlur stdDeviation="5" result="blur" />
-            <feMerge>
-              <feMergeNode in="blur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-        </defs>
-        <rect
-          className="fretboard-neck"
-          x={BOARD_LEFT}
-          y={BOARD_TOP}
-          width={BOARD_WIDTH}
-          height={BOARD_HEIGHT}
-          rx="7"
-        />
-        {profile.layout.fretBoundaries.map((boundary, index) => {
-          const x = BOARD_LEFT + boundary * BOARD_WIDTH;
-          return (
-            <line
-              className={
-                index === 0
-                  ? 'fretboard-body-edge'
-                  : index === profile.layout.fretCount
-                    ? 'fretboard-nut'
-                    : 'fretboard-fret'
-              }
-              key={`boundary-${index}`}
-              x1={x}
-              x2={x}
-              y1={BOARD_TOP}
-              y2={BOARD_TOP + BOARD_HEIGHT}
-            />
-          );
-        })}
-        {Array.from({ length: profile.layout.stringCount }, (_, index) => {
-          const y =
-            BOARD_TOP +
-            ((index + 1) / (profile.layout.stringCount + 1)) * BOARD_HEIGHT;
-          return (
-            <line
-              className="fretboard-string"
-              key={`string-${index}`}
-              x1={BOARD_LEFT}
-              x2={BOARD_LEFT + BOARD_WIDTH}
-              y1={y}
-              y2={y}
-            />
-          );
-        })}
-        {Array.from({ length: profile.layout.fretCount }, (_, fretIndex) => {
-          const x =
-            BOARD_LEFT +
-            ((profile.layout.fretBoundaries[fretIndex] +
-              profile.layout.fretBoundaries[fretIndex + 1]) /
-              2) *
-              BOARD_WIDTH;
-          return (
-            <text
-              className="fretboard-label"
-              key={`label-${fretIndex}`}
-              x={x}
-              y={248}
-            >
-              {fretIndex + 1}
-            </text>
-          );
-        })}
+        <FretboardGeometry profile={profile} />
         <rect
           className="fretboard-selection-surface"
           x="0"
@@ -234,7 +254,7 @@ export function FretboardEditor({
           );
           const colour = state?.colour ?? '#5D5663';
           const label = lit
-            ? `${led.label}, address ${led.address}, ${colour} at ${state!.brightnessPercent}%`
+            ? `${led.label}, address ${led.address}, ${colour} at ${displayBrightness(state!.brightnessPercent)}%`
             : `${led.label}, address ${led.address}, off`;
           return (
             <g
@@ -246,7 +266,10 @@ export function FretboardEditor({
               tabIndex={interactive ? 0 : -1}
               onClick={(event) => {
                 event.stopPropagation();
-                selectLed(led.id, event.shiftKey);
+                selectLed(
+                  led.id,
+                  event.shiftKey || event.metaKey || event.ctrlKey,
+                );
               }}
               onKeyDown={(event) => handleLedKey(event, led.id)}
             >
