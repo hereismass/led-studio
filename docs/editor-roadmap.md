@@ -105,10 +105,15 @@ Implementation complete.
 
 ### 6. Keyframes and hybrid animation
 
+Implementation complete; the keyframe-authoring and hybrid-compositing review gate is open for feedback.
+
 - Add keyframe layers to the same scene-layer model.
-- Initially support brightness and linked palette-colour tracks.
-- Support create, move, duplicate, and delete keyframes, with linear interpolation initially.
-- Show keyframe diamonds in collapsed rows and property tracks when expanded.
+- Support independently optional brightness and linked palette-colour tracks.
+- Author keys at the quarter-beat playhead, then select, move, duplicate, edit, or delete them from the timeline and contextual inspector.
+- Interpolate brightness linearly. Let each colour track choose smooth RGB or step interpolation.
+- Show a compact key overview in collapsed layer rows and independently expandable property tracks with draggable diamonds.
+- Treat layer start/end as a non-destructive active window: stored keys retain their absolute positions and appear dimmed while cropped.
+- Keep locked keys inspectable while preventing parameter, timing, deletion, and ordering edits.
 - Allow effect and keyframe layers to coexist and be reordered under the same evaluator.
 - Review gate: editing precision, inspector/timeline balance, and whether more interpolation or curve tools are justified.
 

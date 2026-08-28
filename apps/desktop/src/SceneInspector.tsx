@@ -49,13 +49,20 @@ export function SceneInspector({
       setError('Use a positive loop length in 0.25-beat steps');
       return;
     }
-    const minimumForLayers = scene.layers.reduce(
-      (maximum, layer) => Math.max(maximum, layer.endBeat),
-      0.25,
-    );
+    const minimumForLayers = scene.layers.reduce((maximum, layer) => {
+      const maximumKeyframeBeat =
+        layer.kind === 'keyframe'
+          ? Math.max(
+              0,
+              ...layer.tracks.brightness.keyframes.map(({ beat }) => beat),
+              ...layer.tracks.colour.keyframes.map(({ beat }) => beat),
+            )
+          : 0;
+      return Math.max(maximum, layer.endBeat, maximumKeyframeBeat);
+    }, 0.25);
     if (value < minimumForLayers) {
       setError(
-        `This scene has an effect ending at beat ${minimumForLayers}. Move or resize it first.`,
+        `This scene has layer content at beat ${minimumForLayers}. Move or resize it first.`,
       );
       return;
     }

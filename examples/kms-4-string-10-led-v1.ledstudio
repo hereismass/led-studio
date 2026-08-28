@@ -27,6 +27,7 @@
       "layers": [
         {
           "id": "bb93ef72-0987-4b53-9924-9a720215ce8a",
+          "kind": "effect",
           "name": "Upper Marker Pulse",
           "enabled": true,
           "locked": false,
@@ -48,6 +49,7 @@
         },
         {
           "id": "2ac65eaf-4c2c-482e-b525-1c6e941dd0c8",
+          "kind": "effect",
           "name": "E-side Chase",
           "enabled": true,
           "locked": false,

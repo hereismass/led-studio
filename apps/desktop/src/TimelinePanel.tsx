@@ -1,8 +1,13 @@
-import type { ExecuteEditorCommandOptions } from '@led-studio/editor-core';
 import type {
-  EffectLayer,
+  ExecuteEditorCommandOptions,
+  KeyframeTrackKind,
+  KeyframeValue,
+} from '@led-studio/editor-core';
+import type {
+  PaletteToken,
   ProjectTiming,
   Scene,
+  SceneLayer,
 } from '@led-studio/project-format';
 import type { PreviewPlaybackController } from './previewPlayback';
 import { SceneTimeline } from './SceneTimeline';
@@ -11,15 +16,32 @@ interface TimelinePanelProps {
   collapsed: boolean;
   canAddEffect: boolean;
   controller: PreviewPlaybackController;
+  expandedKeyframeLayerIds: string[];
+  palette: readonly PaletteToken[];
   scene: Scene | null;
   timing: ProjectTiming;
+  selectedKeyframeId: string | null;
   selectedLayerId: string | null;
-  onAddLayer: (type: 'pulse' | 'chase') => void;
+  onAddKeyframe: (layerId: string, beat: number, value: KeyframeValue) => void;
+  onAddLayer: (type: 'pulse' | 'chase' | 'keyframe') => void;
   onMoveLayer: (id: string, toIndex: number) => void;
+  onSelectKeyframe: (
+    layerId: string,
+    track: KeyframeTrackKind,
+    id: string,
+  ) => void;
   onSelectLayer: (id: string) => void;
+  onToggleKeyframeLayer: (id: string) => void;
+  onUpdateKeyframe: (
+    layerId: string,
+    track: KeyframeTrackKind,
+    id: string,
+    beat: number,
+    options?: ExecuteEditorCommandOptions,
+  ) => void;
   onUpdateLayer: (
     id: string,
-    changes: Pick<EffectLayer, 'endBeat' | 'startBeat'>,
+    changes: Pick<SceneLayer, 'endBeat' | 'startBeat'>,
     options?: ExecuteEditorCommandOptions,
   ) => void;
   onToggle: () => void;
@@ -29,13 +51,20 @@ export function TimelinePanel({
   canAddEffect,
   collapsed,
   controller,
+  expandedKeyframeLayerIds,
+  palette,
   onToggle,
   scene,
+  selectedKeyframeId,
   selectedLayerId,
   timing,
+  onAddKeyframe,
   onAddLayer,
   onMoveLayer,
+  onSelectKeyframe,
   onSelectLayer,
+  onToggleKeyframeLayer,
+  onUpdateKeyframe,
   onUpdateLayer,
 }: TimelinePanelProps) {
   return (
@@ -65,12 +94,19 @@ export function TimelinePanel({
             <SceneTimeline
               canAddEffect={canAddEffect}
               controller={controller}
+              expandedKeyframeLayerIds={expandedKeyframeLayerIds}
+              palette={palette}
               scene={scene}
+              selectedKeyframeId={selectedKeyframeId}
               selectedLayerId={selectedLayerId}
               timing={timing}
+              onAddKeyframe={onAddKeyframe}
               onAddLayer={onAddLayer}
               onMoveLayer={onMoveLayer}
+              onSelectKeyframe={onSelectKeyframe}
               onSelectLayer={onSelectLayer}
+              onToggleKeyframeLayer={onToggleKeyframeLayer}
+              onUpdateKeyframe={onUpdateKeyframe}
               onUpdateLayer={onUpdateLayer}
             />
           ) : (

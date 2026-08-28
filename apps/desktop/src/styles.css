@@ -1264,7 +1264,8 @@ h1 {
 .scene-inspector,
 .led-inspector,
 .group-inspector,
-.layer-inspector {
+.layer-inspector,
+.keyframe-inspector {
   display: grid;
   gap: 14px;
 }
@@ -1272,7 +1273,8 @@ h1 {
 .scene-inspector h3,
 .led-inspector h3,
 .group-inspector h3,
-.layer-inspector h3 {
+.layer-inspector h3,
+.keyframe-inspector h3 {
   margin-top: 4px;
   font-size: 0.83rem;
 }
@@ -1878,6 +1880,25 @@ h1 {
   line-height: normal;
 }
 
+.keyframe-disclosure-button {
+  flex: none;
+  width: 18px;
+  height: 26px;
+  padding: 0;
+  color: #aaa3b4;
+  font-size: 0.78rem;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.keyframe-disclosure-button:hover,
+.keyframe-disclosure-button:focus-visible {
+  color: #f7f5fa;
+  background: #29252e;
+}
+
 .scene-track-select {
   flex: 1;
   min-width: 0;
@@ -2025,6 +2046,40 @@ h1 {
   );
 }
 
+.effect-layer-keyframe {
+  border-color: rgba(128, 113, 255, 0.64);
+  background: linear-gradient(
+    90deg,
+    rgba(128, 113, 255, 0.3),
+    rgba(255, 43, 154, 0.2)
+  );
+}
+
+.keyframe-overview {
+  z-index: 2;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.keyframe-overview > span {
+  position: absolute;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  border: 1px solid #111016;
+  background: #f7f5fa;
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.keyframe-overview > .keyframe-overview-colour {
+  background: #ff62ae;
+}
+
+.keyframe-overview > .keyframe-overview-cropped {
+  opacity: 0.28;
+}
+
 .effect-layer-selected {
   box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.3);
 }
@@ -2050,6 +2105,137 @@ h1 {
 }
 .effect-layer-end-handle {
   right: 2px;
+}
+
+.scene-keyframe-property-row {
+  background: rgba(128, 113, 255, 0.025);
+}
+
+.scene-keyframe-track-label {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  line-height: normal;
+}
+
+.scene-keyframe-track-label button {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  color: #c8c1ce;
+  border: 1px solid #403a46;
+  border-radius: 5px;
+  background: #201d24;
+  cursor: pointer;
+}
+
+.scene-keyframe-track-label button:hover:not(:disabled) {
+  color: #fff;
+  border-color: #696171;
+}
+
+.scene-keyframe-track-label button:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
+.scene-keyframe-track {
+  position: absolute;
+  inset: 0;
+}
+
+.scene-keyframe-active-window {
+  position: absolute;
+  top: 7px;
+  bottom: 7px;
+  border: 1px solid rgba(128, 113, 255, 0.2);
+  border-radius: 5px;
+  background: rgba(128, 113, 255, 0.07);
+}
+
+.scene-keyframe-diamond {
+  z-index: 2;
+  position: absolute;
+  top: 50%;
+  width: 13px;
+  height: 13px;
+  padding: 0;
+  border: 2px solid #161319;
+  border-radius: 2px;
+  background: #f4eff7;
+  cursor: ew-resize;
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.scene-keyframe-colour {
+  background: #ff62ae;
+}
+
+.scene-keyframe-diamond:hover,
+.scene-keyframe-diamond:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.65);
+  outline-offset: 2px;
+}
+
+.scene-keyframe-diamond[aria-pressed='true'] {
+  outline: 2px solid #fff;
+  outline-offset: 3px;
+  box-shadow: 0 0 10px rgba(255, 43, 154, 0.65);
+}
+
+.scene-keyframe-cropped {
+  opacity: 0.3;
+}
+
+.scene-keyframe-colour-picker {
+  z-index: 10;
+  position: absolute;
+  left: 6px;
+  bottom: calc(100% - 4px);
+  display: grid;
+  gap: 9px;
+  width: min(260px, calc(100% - 12px));
+  padding: 10px;
+  color: #cfc8d4;
+  font-size: 0.62rem;
+  border: 1px solid #48414f;
+  border-radius: 8px;
+  background: #1d1a21;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.55);
+}
+
+.scene-keyframe-colour-picker > button {
+  min-height: 28px;
+  color: #bbb5c2;
+  border: 1px solid #403a46;
+  border-radius: 6px;
+  background: #201d24;
+  cursor: pointer;
+}
+
+.inspector-back-button {
+  justify-self: start;
+  padding: 4px 0;
+  color: #aaa3b4;
+  font-size: 0.65rem;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.inspector-back-button:hover {
+  color: #f7f5fa;
+}
+
+.keyframe-cropped-message {
+  margin-top: 7px;
+  padding: 8px;
+  color: #c3b9d0;
+  border: 1px solid rgba(128, 113, 255, 0.3);
+  border-radius: 7px;
+  background: rgba(128, 113, 255, 0.07);
 }
 
 .scene-scrubber {

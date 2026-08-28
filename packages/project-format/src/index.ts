@@ -151,11 +151,13 @@ export const ProjectGroupTargetSchema = z
   .object({ groupId: ProjectEntityIdSchema, kind: z.literal('project-group') })
   .strict();
 
-export const EffectTargetSchema = z.discriminatedUnion('kind', [
+export const LayerTargetSchema = z.discriminatedUnion('kind', [
   DirectLedTargetSchema,
   ProfileGroupTargetSchema,
   ProjectGroupTargetSchema,
 ]);
+
+export const EffectTargetSchema = LayerTargetSchema;
 
 export const PulseEffectSchema = z
   .object({
@@ -193,32 +195,104 @@ export const EffectSchema = z.discriminatedUnion('type', [
   ChaseEffectSchema,
 ]);
 
-export const EffectLayerNameSchema = z
+export const SceneLayerNameSchema = z
   .string()
   .trim()
-  .min(1, 'Effect layer names cannot be empty');
+  .min(1, 'Layer names cannot be empty');
+
+export const EffectLayerNameSchema = SceneLayerNameSchema;
+
+const SceneLayerFields = {
+  enabled: z.boolean(),
+  endBeat: PositiveQuarterBeatSchema,
+  id: ProjectEntityIdSchema,
+  locked: z.boolean(),
+  name: SceneLayerNameSchema,
+  startBeat: QuarterBeatSchema,
+  target: LayerTargetSchema,
+} as const;
 
 export const EffectLayerSchema = z
   .object({
+    ...SceneLayerFields,
     effect: EffectSchema,
-    enabled: z.boolean(),
-    endBeat: PositiveQuarterBeatSchema,
-    id: ProjectEntityIdSchema,
-    locked: z.boolean(),
-    name: EffectLayerNameSchema,
-    startBeat: QuarterBeatSchema,
-    target: EffectTargetSchema,
+    kind: z.literal('effect'),
   })
   .strict()
   .refine((layer) => layer.endBeat > layer.startBeat, {
-    message: 'Effect layer end must be after its start',
+    message: 'Layer end must be after its start',
     path: ['endBeat'],
   });
+
+export const BrightnessKeyframeSchema = z
+  .object({
+    beat: QuarterBeatSchema,
+    brightnessPercent: SceneBrightnessPercentSchema,
+    id: ProjectEntityIdSchema,
+  })
+  .strict();
+
+export const ColourKeyframeSchema = z
+  .object({
+    beat: QuarterBeatSchema,
+    id: ProjectEntityIdSchema,
+    paletteTokenId: PaletteTokenIdSchema,
+  })
+  .strict();
+
+function orderedKeyframesSchema<T extends z.ZodType<{ beat: number }>>(
+  keyframeSchema: T,
+) {
+  return z.array(keyframeSchema).superRefine((keyframes, context) => {
+    for (let index = 1; index < keyframes.length; index += 1) {
+      if (keyframes[index].beat <= keyframes[index - 1].beat) {
+        context.addIssue({
+          code: 'custom',
+          message: 'Keyframes must be ordered at unique beat positions',
+          path: [index, 'beat'],
+        });
+      }
+    }
+  });
+}
+
+export const BrightnessKeyframeTrackSchema = z
+  .object({ keyframes: orderedKeyframesSchema(BrightnessKeyframeSchema) })
+  .strict();
+
+export const ColourKeyframeTrackSchema = z
+  .object({
+    interpolation: z.enum(['linear-rgb', 'step']),
+    keyframes: orderedKeyframesSchema(ColourKeyframeSchema),
+  })
+  .strict();
+
+export const KeyframeLayerSchema = z
+  .object({
+    ...SceneLayerFields,
+    kind: z.literal('keyframe'),
+    tracks: z
+      .object({
+        brightness: BrightnessKeyframeTrackSchema,
+        colour: ColourKeyframeTrackSchema,
+      })
+      .strict(),
+  })
+  .strict()
+  .refine((layer) => layer.endBeat > layer.startBeat, {
+    message: 'Layer end must be after its start',
+    path: ['endBeat'],
+  });
+
+export const SceneLayerSchema = z.discriminatedUnion('kind', [
+  EffectLayerSchema,
+  KeyframeLayerSchema,
+]);
 
 export const SceneSchema = z
   .object({
     id: ProjectEntityIdSchema,
-    layers: z.array(EffectLayerSchema).default([]),
+    layers: z.array(SceneLayerSchema).default([]),
     ledStates: z.record(z.string().trim().min(1), SceneLedStateSchema),
     loopLengthBeats: SceneLoopLengthSchema,
     name: SceneNameSchema,
@@ -343,7 +417,7 @@ export const ProjectSchema = z
         if (layerNames.has(layerName)) {
           context.addIssue({
             code: 'custom',
-            message: `Effect layer name "${layer.name}" is already in use`,
+            message: `Layer name "${layer.name}" is already in use`,
             path: ['scenes', sceneIndex, 'layers', layerIndex, 'name'],
           });
         }
@@ -352,22 +426,89 @@ export const ProjectSchema = z
         if (layer.endBeat > scene.loopLengthBeats) {
           context.addIssue({
             code: 'custom',
-            message: 'Effect layer must end within the scene loop',
+            message: 'Layer must end within the scene loop',
             path: ['scenes', sceneIndex, 'layers', layerIndex, 'endBeat'],
           });
         }
-        if (!ids.has(layer.effect.paletteTokenId)) {
-          context.addIssue({
-            code: 'custom',
-            message: `Effect layer references unknown palette token "${layer.effect.paletteTokenId}"`,
-            path: [
-              'scenes',
-              sceneIndex,
-              'layers',
-              layerIndex,
-              'effect',
-              'paletteTokenId',
-            ],
+        if (layer.kind === 'effect') {
+          if (!ids.has(layer.effect.paletteTokenId)) {
+            context.addIssue({
+              code: 'custom',
+              message: `Effect layer references unknown palette token "${layer.effect.paletteTokenId}"`,
+              path: [
+                'scenes',
+                sceneIndex,
+                'layers',
+                layerIndex,
+                'effect',
+                'paletteTokenId',
+              ],
+            });
+          }
+        } else {
+          const keyframeTracks = [
+            ['brightness', layer.tracks.brightness.keyframes] as const,
+            ['colour', layer.tracks.colour.keyframes] as const,
+          ];
+          keyframeTracks.forEach(([trackName, keyframes]) => {
+            keyframes.forEach((keyframe, keyframeIndex) => {
+              if (entityIds.has(keyframe.id)) {
+                context.addIssue({
+                  code: 'custom',
+                  message: `Entity ID "${keyframe.id}" is already in use`,
+                  path: [
+                    'scenes',
+                    sceneIndex,
+                    'layers',
+                    layerIndex,
+                    'tracks',
+                    trackName,
+                    'keyframes',
+                    keyframeIndex,
+                    'id',
+                  ],
+                });
+              }
+              entityIds.add(keyframe.id);
+              if (keyframe.beat > scene.loopLengthBeats) {
+                context.addIssue({
+                  code: 'custom',
+                  message: 'Keyframe must be within the scene loop',
+                  path: [
+                    'scenes',
+                    sceneIndex,
+                    'layers',
+                    layerIndex,
+                    'tracks',
+                    trackName,
+                    'keyframes',
+                    keyframeIndex,
+                    'beat',
+                  ],
+                });
+              }
+              if (
+                trackName === 'colour' &&
+                'paletteTokenId' in keyframe &&
+                !ids.has(keyframe.paletteTokenId)
+              ) {
+                context.addIssue({
+                  code: 'custom',
+                  message: `Colour keyframe references unknown palette token "${keyframe.paletteTokenId}"`,
+                  path: [
+                    'scenes',
+                    sceneIndex,
+                    'layers',
+                    layerIndex,
+                    'tracks',
+                    'colour',
+                    'keyframes',
+                    keyframeIndex,
+                    'paletteTokenId',
+                  ],
+                });
+              }
+            });
           });
         }
         const projectGroupId =
@@ -378,7 +519,7 @@ export const ProjectSchema = z
         ) {
           context.addIssue({
             code: 'custom',
-            message: `Effect layer references unknown project group "${projectGroupId}"`,
+            message: `Layer references unknown project group "${projectGroupId}"`,
             path: [
               'scenes',
               sceneIndex,
@@ -393,15 +534,24 @@ export const ProjectSchema = z
     });
   });
 
+export type BrightnessKeyframe = z.infer<typeof BrightnessKeyframeSchema>;
+export type BrightnessKeyframeTrack = z.infer<
+  typeof BrightnessKeyframeTrackSchema
+>;
 export type ChaseEffect = z.infer<typeof ChaseEffectSchema>;
+export type ColourKeyframe = z.infer<typeof ColourKeyframeSchema>;
+export type ColourKeyframeTrack = z.infer<typeof ColourKeyframeTrackSchema>;
 export type Effect = z.infer<typeof EffectSchema>;
 export type EffectLayer = z.infer<typeof EffectLayerSchema>;
 export type EffectTarget = z.infer<typeof EffectTargetSchema>;
+export type KeyframeLayer = z.infer<typeof KeyframeLayerSchema>;
+export type LayerTarget = z.infer<typeof LayerTargetSchema>;
 export type PaletteToken = z.infer<typeof PaletteTokenSchema>;
 export type ProjectTiming = z.infer<typeof ProjectTimingSchema>;
 export type ProjectGroup = z.infer<typeof ProjectGroupSchema>;
 export type PulseEffect = z.infer<typeof PulseEffectSchema>;
 export type Scene = z.infer<typeof SceneSchema>;
+export type SceneLayer = z.infer<typeof SceneLayerSchema>;
 export type SceneLedState = z.infer<typeof SceneLedStateSchema>;
 export type Project = z.infer<typeof ProjectSchema>;
 

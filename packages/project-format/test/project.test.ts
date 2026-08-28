@@ -14,6 +14,11 @@ const BLACK_ID = 'f0e1d2c3-b4a5-4678-9abc-def012345678';
 const GROUP_ID = 'ad56c792-07e6-42d7-84fd-0b509289b4ab';
 const PULSE_ID = 'bb93ef72-0987-4b53-9924-9a720215ce8a';
 const CHASE_ID = '2ac65eaf-4c2c-482e-b525-1c6e941dd0c8';
+const KEYFRAME_LAYER_ID = 'c4793529-a645-4c18-8a4d-5e4f148ee493';
+const BRIGHTNESS_KEY_1_ID = '11111111-1111-4111-8111-111111111111';
+const BRIGHTNESS_KEY_2_ID = '22222222-2222-4222-8222-222222222222';
+const COLOUR_KEY_1_ID = '33333333-3333-4333-8333-333333333333';
+const COLOUR_KEY_2_ID = '44444444-4444-4444-8444-444444444444';
 
 const validProject: Project = {
   schemaVersion: 2,
@@ -209,6 +214,7 @@ describe('ProjectSchema', () => {
               enabled: true,
               endBeat: 2,
               id: PULSE_ID,
+              kind: 'effect',
               locked: false,
               name: 'Pulse',
               startBeat: 0,
@@ -227,6 +233,7 @@ describe('ProjectSchema', () => {
               enabled: true,
               endBeat: 4,
               id: CHASE_ID,
+              kind: 'effect',
               locked: true,
               name: 'Chase',
               startBeat: 1,
@@ -240,10 +247,145 @@ describe('ProjectSchema', () => {
       ],
     });
     expect(project.groups[0].name).toBe('Upper markers');
-    expect(project.scenes[0].layers.map((layer) => layer.effect.type)).toEqual([
-      'pulse',
-      'chase',
-    ]);
+    expect(
+      project.scenes[0].layers.map((layer) =>
+        layer.kind === 'effect' ? layer.effect.type : layer.kind,
+      ),
+    ).toEqual(['pulse', 'chase']);
+  });
+
+  it('accepts independently animated brightness and colour keyframe tracks', () => {
+    const project = parseProject({
+      ...validProject,
+      scenes: [
+        {
+          id: '6c21dc04-9a75-4f10-a7bb-9f17dc2fe32a',
+          layers: [
+            {
+              enabled: true,
+              endBeat: 3,
+              id: KEYFRAME_LAYER_ID,
+              kind: 'keyframe',
+              locked: false,
+              name: 'Marker animation',
+              startBeat: 0.5,
+              target: { groupId: 'all-leds', kind: 'profile-group' },
+              tracks: {
+                brightness: {
+                  keyframes: [
+                    {
+                      beat: 0,
+                      brightnessPercent: 25,
+                      id: BRIGHTNESS_KEY_1_ID,
+                    },
+                    {
+                      beat: 2,
+                      brightnessPercent: 75,
+                      id: BRIGHTNESS_KEY_2_ID,
+                    },
+                  ],
+                },
+                colour: {
+                  interpolation: 'linear-rgb',
+                  keyframes: [
+                    {
+                      beat: 1,
+                      id: COLOUR_KEY_1_ID,
+                      paletteTokenId: HOT_PINK_ID,
+                    },
+                    {
+                      beat: 3,
+                      id: COLOUR_KEY_2_ID,
+                      paletteTokenId: ELECTRIC_GREEN_ID,
+                    },
+                  ],
+                },
+              },
+            },
+          ],
+          ledStates: {},
+          loopLengthBeats: 4,
+          name: 'Keyframed',
+        },
+      ],
+    });
+
+    const layer = project.scenes[0].layers[0];
+    expect(layer.kind).toBe('keyframe');
+    if (layer.kind !== 'keyframe') throw new Error('Expected keyframe layer');
+    expect(layer.tracks.brightness.keyframes).toHaveLength(2);
+    expect(layer.tracks.colour.interpolation).toBe('linear-rgb');
+  });
+
+  it('rejects invalid keyframe ordering, IDs, bounds, and palette references', () => {
+    const layer = {
+      enabled: true,
+      endBeat: 4,
+      id: KEYFRAME_LAYER_ID,
+      kind: 'keyframe',
+      locked: false,
+      name: 'Keyframes',
+      startBeat: 0,
+      target: { groupId: 'all-leds', kind: 'profile-group' },
+      tracks: {
+        brightness: {
+          keyframes: [
+            {
+              beat: 2,
+              brightnessPercent: 25,
+              id: BRIGHTNESS_KEY_1_ID,
+            },
+            {
+              beat: 1,
+              brightnessPercent: 75,
+              id: BRIGHTNESS_KEY_2_ID,
+            },
+          ],
+        },
+        colour: {
+          interpolation: 'step',
+          keyframes: [
+            {
+              beat: 1,
+              id: COLOUR_KEY_1_ID,
+              paletteTokenId: HOT_PINK_ID,
+            },
+          ],
+        },
+      },
+    };
+    const withLayer = (candidate: typeof layer) => ({
+      ...validProject,
+      scenes: [
+        {
+          id: '6c21dc04-9a75-4f10-a7bb-9f17dc2fe32a',
+          layers: [candidate],
+          ledStates: {},
+          loopLengthBeats: 4,
+          name: 'Keyframed',
+        },
+      ],
+    });
+
+    expect(ProjectSchema.safeParse(withLayer(layer)).success).toBe(false);
+
+    const duplicateId = structuredClone(layer);
+    duplicateId.tracks.brightness.keyframes.reverse();
+    duplicateId.tracks.colour.keyframes[0].id = BRIGHTNESS_KEY_1_ID;
+    expect(ProjectSchema.safeParse(withLayer(duplicateId)).success).toBe(false);
+
+    const beyondLoop = structuredClone(layer);
+    beyondLoop.tracks.brightness.keyframes.reverse();
+    beyondLoop.tracks.brightness.keyframes[1].beat = 4.25;
+    expect(ProjectSchema.safeParse(withLayer(beyondLoop)).success).toBe(false);
+
+    const unknownColour = structuredClone(layer);
+    unknownColour.tracks.brightness.keyframes.reverse();
+    unknownColour.tracks.colour.keyframes[0].paletteTokenId =
+      '55555555-5555-4555-8555-555555555555';
+    expect(ProjectSchema.safeParse(withLayer(unknownColour)).success).toBe(
+      false,
+    );
   });
 
   it('rejects invalid group, target, reference, and layer timing data', () => {
@@ -266,6 +408,7 @@ describe('ProjectSchema', () => {
       enabled: true,
       endBeat: 4.25,
       id: PULSE_ID,
+      kind: 'effect',
       locked: false,
       name: 'Pulse',
       startBeat: 0.1,

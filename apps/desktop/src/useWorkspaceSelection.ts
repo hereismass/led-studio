@@ -11,7 +11,14 @@ export type InspectorTarget =
   | { kind: 'project' }
   | { id: string; kind: 'scene' }
   | { id: string; kind: 'group' }
-  | { id: string; kind: 'layer'; sceneId: string };
+  | { id: string; kind: 'layer'; sceneId: string }
+  | {
+      id: string;
+      kind: 'keyframe';
+      layerId: string;
+      sceneId: string;
+      track: 'brightness' | 'colour';
+    };
 
 export type LedSelectionSource =
   | { kind: 'direct' }
@@ -64,6 +71,26 @@ export function useWorkspaceSelection(
       if (!scene?.layers.some((layer) => layer.id === inspectorTarget.id)) {
         setInspectorTarget(
           scene ? { id: scene.id, kind: 'scene' } : { kind: 'project' },
+        );
+      }
+    }
+    if (inspectorTarget.kind === 'keyframe') {
+      const scene = scenes.find(({ id }) => id === inspectorTarget.sceneId);
+      const layer = scene?.layers.find(
+        ({ id }) => id === inspectorTarget.layerId,
+      );
+      const exists =
+        layer?.kind === 'keyframe' &&
+        layer.tracks[inspectorTarget.track].keyframes.some(
+          ({ id }) => id === inspectorTarget.id,
+        );
+      if (!exists) {
+        setInspectorTarget(
+          layer
+            ? { id: layer.id, kind: 'layer', sceneId: inspectorTarget.sceneId }
+            : scene
+              ? { id: scene.id, kind: 'scene' }
+              : { kind: 'project' },
         );
       }
     }

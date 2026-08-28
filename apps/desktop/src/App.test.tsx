@@ -368,7 +368,7 @@ describe('App project launcher and lifecycle', () => {
       screen.getByRole('option', { name: /New Group.*1 LEDs/i }),
     ).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Add effect' }));
+    await user.click(screen.getByRole('button', { name: 'Add layer' }));
     await user.click(screen.getByRole('option', { name: 'Pulse' }));
     expect(screen.getByRole('main')).toHaveStyle({
       '--bottom-panel-height': '227px',
@@ -377,7 +377,7 @@ describe('App project launcher and lifecycle', () => {
       screen.getByRole('button', { name: 'Pulse, 0 to 4 beats' }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole('button', { name: 'Effect target' }),
+      screen.getByRole('button', { name: 'Layer target' }),
     ).toHaveTextContent('New Group');
     expect(screen.getByRole('button', { name: 'White' })).toHaveAttribute(
       'aria-pressed',
@@ -413,6 +413,88 @@ describe('App project launcher and lifecycle', () => {
     expect(
       screen.getByText(/Protects this layer from parameter/),
     ).toBeVisible();
+  });
+
+  it('authors and inspects independent keyframe tracks at the playhead', async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await user.click(screen.getByRole('button', { name: /new project/i }));
+
+    await user.click(screen.getByRole('button', { name: 'Add layer' }));
+    await user.click(screen.getByRole('option', { name: 'Keyframes' }));
+    expect(screen.getByRole('main')).toHaveStyle({
+      '--bottom-panel-height': '313px',
+    });
+    expect(
+      screen.getByRole('button', { name: 'Collapse Keyframes tracks' }),
+    ).toHaveAttribute('aria-expanded', 'true');
+
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Add brightness keyframe at playhead',
+      }),
+    );
+    expect(screen.getByText('brightness keyframe')).toBeInTheDocument();
+    expect(
+      screen.getByRole('spinbutton', { name: 'Beat position' }),
+    ).toHaveValue(0);
+    const brightness = screen.getByRole('spinbutton', { name: 'Brightness' });
+    await user.clear(brightness);
+    await user.type(brightness, '45{Enter}');
+
+    fireEvent.change(
+      screen.getByRole('slider', { name: 'Scene preview position' }),
+      { target: { value: '1' } },
+    );
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Add brightness keyframe at playhead',
+      }),
+    );
+    expect(screen.getByRole('spinbutton', { name: 'Brightness' })).toHaveValue(
+      45,
+    );
+
+    await user.click(
+      screen.getByRole('button', { name: 'Add colour keyframe at playhead' }),
+    );
+    const colourPicker = document.querySelector(
+      '.scene-keyframe-colour-picker',
+    );
+    expect(colourPicker).not.toBeNull();
+    await user.click(
+      within(colourPicker as HTMLElement).getByRole('button', {
+        name: 'White',
+      }),
+    );
+    expect(screen.getByText('colour keyframe')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'White' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+
+    const secondBrightnessKey = screen.getByRole('button', {
+      name: 'brightness keyframe at 1 beats',
+    });
+    fireEvent.keyDown(secondBrightnessKey, { key: 'ArrowRight' });
+    expect(
+      screen.getByRole('button', {
+        name: 'brightness keyframe at 1.25 beats',
+      }),
+    ).toBeInTheDocument();
+
+    const timeline = screen.getByRole('tabpanel', { name: 'Scene timeline' });
+    await user.click(
+      within(timeline).getByRole('button', { name: 'Keyframes' }),
+    );
+    const start = screen.getByRole('spinbutton', { name: 'Start beat' });
+    await user.clear(start);
+    await user.type(start, '1.5{Enter}');
+    expect(
+      screen.getByRole('button', {
+        name: 'brightness keyframe at 0 beats',
+      }),
+    ).toHaveClass('scene-keyframe-cropped');
   });
 
   it('reorders effect rows by drag and keeps keyboard ordering available', async () => {

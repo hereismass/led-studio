@@ -1,23 +1,30 @@
 import {
+  createKeyframeAddedCommand,
+  createKeyframeDuplicatedCommand,
   createPaletteTokenAddedCommand,
   createPaletteTokenDuplicatedCommand,
-  createEffectLayerAddedCommand,
-  createEffectLayerDuplicatedCommand,
+  createSceneLayerAddedCommand,
+  createSceneLayerDuplicatedCommand,
   createGroupAddedCommand,
   createGroupDuplicatedCommand,
   createSceneAddedCommand,
   createSceneDuplicatedCommand,
+  nextAvailableKeyframeBeat,
   paletteTokenUsageCount,
   projectGroupUsageCount,
   type EditorCommand,
   type ExecuteEditorCommandOptions,
+  type KeyframeValue,
+  type KeyframeTrackKind,
 } from '@led-studio/editor-core';
 import { getHardwareProfile } from '@led-studio/hardware-profiles';
 import type {
-  EffectTarget,
+  KeyframeLayer,
+  LayerTarget,
   ProjectGroup,
   Scene,
 } from '@led-studio/project-format';
+import { useEffect, useState } from 'react';
 import { AssetsPanel } from './AssetsPanel';
 import { HardwarePanel } from './HardwarePanel';
 import { InspectorPanel } from './InspectorPanel';
@@ -84,6 +91,9 @@ export function ProjectWorkspace({
 
   const activeScene =
     scenes.find((scene) => scene.id === activeSceneId) ?? null;
+  const [expandedKeyframeLayerIds, setExpandedKeyframeLayerIds] = useState<
+    string[]
+  >([]);
   const selectedToken =
     inspectorTarget.kind === 'palette'
       ? (colours.find((token) => token.id === inspectorTarget.id) ?? null)
@@ -103,6 +113,34 @@ export function ProjectWorkspace({
       ? (activeScene.layers.find((layer) => layer.id === inspectorTarget.id) ??
         null)
       : null;
+  const selectedKeyframeLayer =
+    inspectorTarget.kind === 'keyframe' &&
+    activeScene?.id === inspectorTarget.sceneId
+      ? (activeScene.layers.find(
+          (layer): layer is KeyframeLayer =>
+            layer.id === inspectorTarget.layerId && layer.kind === 'keyframe',
+        ) ?? null)
+      : null;
+  const selectedKeyframe =
+    inspectorTarget.kind === 'keyframe' &&
+    selectedKeyframeLayer?.kind === 'keyframe'
+      ? (selectedKeyframeLayer.tracks[inspectorTarget.track].keyframes.find(
+          ({ id }) => id === inspectorTarget.id,
+        ) ?? null)
+      : null;
+  const selectedKeyframeTrack =
+    inspectorTarget.kind === 'keyframe' ? inspectorTarget.track : null;
+  const canDuplicateKeyframe =
+    selectedKeyframeLayer?.kind === 'keyframe' &&
+    selectedKeyframe &&
+    selectedKeyframeTrack
+      ? nextAvailableKeyframeBeat(
+          selectedKeyframeLayer,
+          selectedKeyframeTrack,
+          selectedKeyframe.beat,
+          activeScene?.loopLengthBeats ?? 0,
+        ) !== null
+      : false;
   const selectedLeds = profile.leds.filter((led) =>
     selectedLedIds.includes(led.id),
   );
@@ -119,7 +157,28 @@ export function ProjectWorkspace({
     resizeWithKeyboard,
     togglePanel,
     workspaceStyle,
-  } = useWorkspaceLayout(activeScene?.layers.length ?? 0);
+  } = useWorkspaceLayout(
+    (activeScene?.layers.length ?? 0) +
+      (activeScene?.layers.filter(
+        (layer) =>
+          layer.kind === 'keyframe' &&
+          expandedKeyframeLayerIds.includes(layer.id),
+      ).length ?? 0) *
+        2,
+  );
+
+  useEffect(() => {
+    const validIds = new Set(
+      scenes.flatMap((scene) =>
+        scene.layers
+          .filter((layer) => layer.kind === 'keyframe')
+          .map(({ id }) => id),
+      ),
+    );
+    setExpandedKeyframeLayerIds((current) =>
+      current.filter((id) => validIds.has(id)),
+    );
+  }, [scenes]);
 
   function executeAndSelectCreated(
     command: EditorCommand,
@@ -195,9 +254,8 @@ export function ProjectWorkspace({
     setInspectorTarget({ id: group.id, kind: 'group' });
   }
 
-  function addEffectLayer(effectType: 'pulse' | 'chase') {
-    if (!activeScene || colours.length === 0) return;
-    let target: EffectTarget;
+  function currentLayerTarget(): LayerTarget {
+    let target: LayerTarget;
     if (ledSelectionSource.kind === 'profile-group') {
       target = { groupId: ledSelectionSource.id, kind: 'profile-group' };
     } else if (ledSelectionSource.kind === 'project-group') {
@@ -212,19 +270,28 @@ export function ProjectWorkspace({
         kind: 'profile-group',
       };
     }
-    const command = createEffectLayerAddedCommand(
+    return target;
+  }
+
+  function addLayer(layerType: 'pulse' | 'chase' | 'keyframe') {
+    if (!activeScene || (layerType !== 'keyframe' && colours.length === 0))
+      return;
+    const command = createSceneLayerAddedCommand(
       project,
       activeScene.id,
-      effectType,
-      target,
+      layerType,
+      currentLayerTarget(),
     );
     const result = onExecuteCommand(command);
-    if (result.ok && result.changed)
+    if (result.ok && result.changed) {
+      if (layerType === 'keyframe')
+        setExpandedKeyframeLayerIds((current) => [...current, command.id]);
       setInspectorTarget({
         id: command.id,
         kind: 'layer',
         sceneId: activeScene.id,
       });
+    }
   }
 
   return (
@@ -339,6 +406,7 @@ export function ProjectWorkspace({
 
         <InspectorPanel
           activeScene={activeScene}
+          canDuplicateKeyframe={canDuplicateKeyframe}
           collapsed={layout.rightCollapsed}
           focusTokenId={focusTokenId}
           inspectorTarget={inspectorTarget}
@@ -350,6 +418,9 @@ export function ProjectWorkspace({
           selectedLeds={selectedLeds}
           selectedGroup={selectedGroup}
           selectedLayer={selectedLayer}
+          selectedKeyframe={selectedKeyframe}
+          selectedKeyframeLayer={selectedKeyframeLayer}
+          selectedKeyframeTrack={selectedKeyframeTrack}
           selectedScene={selectedScene}
           selectedToken={selectedToken}
           tokenUsageCount={
@@ -393,10 +464,32 @@ export function ProjectWorkspace({
             const result = onExecuteCommand({
               id: selectedLayer.id,
               sceneId: activeScene.id,
-              type: 'effect-layer-deleted',
+              type: 'scene-layer-deleted',
             });
             if (result.ok && result.changed)
               setInspectorTarget({ id: activeScene.id, kind: 'scene' });
+          }}
+          onDeleteKeyframe={() => {
+            if (
+              !activeScene ||
+              !selectedKeyframeLayer ||
+              !selectedKeyframe ||
+              !selectedKeyframeTrack
+            )
+              return;
+            const result = onExecuteCommand({
+              id: selectedKeyframe.id,
+              layerId: selectedKeyframeLayer.id,
+              sceneId: activeScene.id,
+              track: selectedKeyframeTrack,
+              type: 'keyframe-deleted',
+            });
+            if (result.ok && result.changed)
+              setInspectorTarget({
+                id: selectedKeyframeLayer.id,
+                kind: 'layer',
+                sceneId: activeScene.id,
+              });
           }}
           onDeleteToken={deleteSelectedToken}
           onDuplicateScene={() => {
@@ -425,7 +518,7 @@ export function ProjectWorkspace({
           }}
           onDuplicateLayer={() => {
             if (!selectedLayer || !activeScene) return;
-            const command = createEffectLayerDuplicatedCommand(
+            const command = createSceneLayerDuplicatedCommand(
               project,
               activeScene.id,
               selectedLayer.id,
@@ -438,13 +531,39 @@ export function ProjectWorkspace({
                 sceneId: activeScene.id,
               });
           }}
+          onDuplicateKeyframe={() => {
+            if (
+              !activeScene ||
+              !selectedKeyframeLayer ||
+              !selectedKeyframe ||
+              !selectedKeyframeTrack ||
+              !canDuplicateKeyframe
+            )
+              return;
+            const command = createKeyframeDuplicatedCommand(
+              project,
+              activeScene.id,
+              selectedKeyframeLayer.id,
+              selectedKeyframeTrack,
+              selectedKeyframe.id,
+            );
+            const result = onExecuteCommand(command);
+            if (result.ok && result.changed)
+              setInspectorTarget({
+                id: command.newId,
+                kind: 'keyframe',
+                layerId: selectedKeyframeLayer.id,
+                sceneId: activeScene.id,
+                track: selectedKeyframeTrack,
+              });
+          }}
           onMoveLayer={(toIndex) => {
             if (!selectedLayer || !activeScene) return;
             onExecuteCommand({
               id: selectedLayer.id,
               sceneId: activeScene.id,
               toIndex,
-              type: 'effect-layer-moved',
+              type: 'scene-layer-moved',
             });
           }}
           onDuplicateToken={() => {
@@ -506,10 +625,35 @@ export function ProjectWorkspace({
                 changes,
                 id: selectedLayer.id,
                 sceneId: activeScene.id,
-                type: 'effect-layer-updated',
+                type: 'scene-layer-updated',
               },
               options,
             );
+          }}
+          onUpdateKeyframe={(changes) => {
+            if (
+              !activeScene ||
+              !selectedKeyframeLayer ||
+              !selectedKeyframe ||
+              !selectedKeyframeTrack
+            )
+              return;
+            onExecuteCommand({
+              changes,
+              id: selectedKeyframe.id,
+              layerId: selectedKeyframeLayer.id,
+              sceneId: activeScene.id,
+              track: selectedKeyframeTrack,
+              type: 'keyframe-updated',
+            });
+          }}
+          onBackToLayer={() => {
+            if (!activeScene || !selectedKeyframeLayer) return;
+            setInspectorTarget({
+              id: selectedKeyframeLayer.id,
+              kind: 'layer',
+              sceneId: activeScene.id,
+            });
           }}
           onUpdateToken={(changes, options) => {
             if (!selectedToken) return;
@@ -538,19 +682,43 @@ export function ProjectWorkspace({
           collapsed={layout.bottomCollapsed}
           canAddEffect={colours.length > 0}
           controller={previewController}
+          expandedKeyframeLayerIds={expandedKeyframeLayerIds}
+          palette={colours}
           scene={activeScene}
+          selectedKeyframeId={
+            inspectorTarget.kind === 'keyframe' ? inspectorTarget.id : null
+          }
           selectedLayerId={
             inspectorTarget.kind === 'layer' ? inspectorTarget.id : null
           }
           timing={project.timing}
-          onAddLayer={addEffectLayer}
+          onAddKeyframe={(layerId, beat, value) => {
+            if (!activeScene) return;
+            const command = createKeyframeAddedCommand(
+              project,
+              activeScene.id,
+              layerId,
+              beat,
+              value,
+            );
+            const result = onExecuteCommand(command);
+            if (!result.ok || !result.changed) return;
+            setInspectorTarget({
+              id: command.id,
+              kind: 'keyframe',
+              layerId,
+              sceneId: activeScene.id,
+              track: value.track,
+            });
+          }}
+          onAddLayer={addLayer}
           onMoveLayer={(id, toIndex) => {
             if (!activeScene) return;
             onExecuteCommand({
               id,
               sceneId: activeScene.id,
               toIndex,
-              type: 'effect-layer-moved',
+              type: 'scene-layer-moved',
             });
           }}
           onSelectLayer={(id) => {
@@ -561,6 +729,37 @@ export function ProjectWorkspace({
                 sceneId: activeScene.id,
               });
           }}
+          onSelectKeyframe={(layerId, track, id) => {
+            if (!activeScene) return;
+            setInspectorTarget({
+              id,
+              kind: 'keyframe',
+              layerId,
+              sceneId: activeScene.id,
+              track,
+            });
+          }}
+          onToggleKeyframeLayer={(id) => {
+            setExpandedKeyframeLayerIds((current) =>
+              current.includes(id)
+                ? current.filter((layerId) => layerId !== id)
+                : [...current, id],
+            );
+          }}
+          onUpdateKeyframe={(layerId, track, id, beat, options) => {
+            if (!activeScene) return;
+            onExecuteCommand(
+              {
+                changes: { beat },
+                id,
+                layerId,
+                sceneId: activeScene.id,
+                track,
+                type: 'keyframe-updated',
+              },
+              options,
+            );
+          }}
           onUpdateLayer={(id, changes, options) => {
             if (!activeScene) return;
             onExecuteCommand(
@@ -568,7 +767,7 @@ export function ProjectWorkspace({
                 changes,
                 id,
                 sceneId: activeScene.id,
-                type: 'effect-layer-updated',
+                type: 'scene-layer-updated',
               },
               options,
             );

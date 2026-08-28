@@ -297,14 +297,14 @@ export function validateProjectHardwareReferences(
       if (layer.target.kind === 'leds') {
         validateLedList(
           layer.target.ledIds,
-          `Effect layer "${layer.name}" in scene "${scene.name}"`,
+          `Layer "${layer.name}" in scene "${scene.name}"`,
         );
       } else if (
         layer.target.kind === 'profile-group' &&
         !profileGroupIds.has(layer.target.groupId)
       ) {
         throw new HardwareCompatibilityError(
-          `Effect layer "${layer.name}" references profile group "${layer.target.groupId}", which is not part of ${profile.name}.`,
+          `Layer "${layer.name}" references profile group "${layer.target.groupId}", which is not part of ${profile.name}.`,
         );
       }
     });

@@ -1,17 +1,25 @@
-import type { ExecuteEditorCommandOptions } from '@led-studio/editor-core';
+import type {
+  ExecuteEditorCommandOptions,
+  KeyframeTrackKind,
+  SceneLayerChanges,
+} from '@led-studio/editor-core';
 import type {
   HardwareLed,
   HardwareProfile,
 } from '@led-studio/hardware-profiles';
 import type {
-  EffectLayer,
+  BrightnessKeyframe,
+  ColourKeyframe,
+  KeyframeLayer,
   PaletteToken,
   Project,
   ProjectGroup,
   Scene,
+  SceneLayer,
 } from '@led-studio/project-format';
 import { GroupInspector } from './GroupInspector';
 import { LayerInspector } from './LayerInspector';
+import { KeyframeInspector } from './KeyframeInspector';
 import { LedSelectionInspector } from './LedSelectionInspector';
 import { PaletteInspector } from './PaletteInspector';
 import { SceneInspector } from './SceneInspector';
@@ -29,7 +37,11 @@ interface InspectorPanelProps {
   selectedLedIds: string[];
   selectedLeds: HardwareLed[];
   selectedGroup: ProjectGroup | null;
-  selectedLayer: EffectLayer | null;
+  selectedLayer: SceneLayer | null;
+  selectedKeyframe: BrightnessKeyframe | ColourKeyframe | null;
+  selectedKeyframeLayer: KeyframeLayer | null;
+  selectedKeyframeTrack: KeyframeTrackKind | null;
+  canDuplicateKeyframe: boolean;
   selectedScene: Scene | null;
   selectedToken: PaletteToken | null;
   tokenUsageCount: number;
@@ -42,10 +54,12 @@ interface InspectorPanelProps {
   onDeleteToken: () => void;
   onDeleteGroup: () => void;
   onDeleteLayer: () => void;
+  onDeleteKeyframe: () => void;
   onDuplicateScene: () => void;
   onDuplicateToken: () => void;
   onDuplicateGroup: () => void;
   onDuplicateLayer: () => void;
+  onDuplicateKeyframe: () => void;
   onMoveLayer: (toIndex: number) => void;
   onPaint: (paletteTokenId: string) => void;
   onToggle: () => void;
@@ -55,9 +69,15 @@ interface InspectorPanelProps {
     changes: Partial<Pick<ProjectGroup, 'ledIds' | 'name'>>,
   ) => void;
   onUpdateLayer: (
-    changes: Partial<Omit<EffectLayer, 'id'>>,
+    changes: SceneLayerChanges,
     options?: ExecuteEditorCommandOptions,
   ) => void;
+  onUpdateKeyframe: (changes: {
+    beat?: number;
+    brightnessPercent?: number;
+    paletteTokenId?: string;
+  }) => void;
+  onBackToLayer: () => void;
   onUpdateScene: (
     changes: Partial<Pick<Scene, 'loopLengthBeats' | 'name'>>,
   ) => void;
@@ -69,6 +89,7 @@ interface InspectorPanelProps {
 
 export function InspectorPanel({
   activeScene,
+  canDuplicateKeyframe,
   collapsed,
   focusTokenId,
   groupUsageCount,
@@ -77,10 +98,12 @@ export function InspectorPanel({
   onDeleteScene,
   onDeleteGroup,
   onDeleteLayer,
+  onDeleteKeyframe,
   onDeleteToken,
   onDuplicateScene,
   onDuplicateGroup,
   onDuplicateLayer,
+  onDuplicateKeyframe,
   onMoveLayer,
   onDuplicateToken,
   onPaint,
@@ -90,6 +113,8 @@ export function InspectorPanel({
   onUpdateScene,
   onUpdateGroup,
   onUpdateLayer,
+  onUpdateKeyframe,
+  onBackToLayer,
   onUpdateToken,
   palette,
   profile,
@@ -99,6 +124,9 @@ export function InspectorPanel({
   selectedLeds,
   selectedGroup,
   selectedLayer,
+  selectedKeyframe,
+  selectedKeyframeLayer,
+  selectedKeyframeTrack,
   selectedScene,
   selectedToken,
   tokenUsageCount,
@@ -161,6 +189,22 @@ export function InspectorPanel({
               onDuplicate={onDuplicateGroup}
               onSelectionChange={onSelectionChange}
               onUpdate={onUpdateGroup}
+            />
+          ) : selectedKeyframe &&
+            selectedKeyframeLayer &&
+            selectedKeyframeTrack &&
+            activeScene ? (
+            <KeyframeInspector
+              canDuplicate={canDuplicateKeyframe}
+              keyframe={selectedKeyframe}
+              layer={selectedKeyframeLayer}
+              palette={palette}
+              scene={activeScene}
+              track={selectedKeyframeTrack}
+              onBack={onBackToLayer}
+              onDelete={onDeleteKeyframe}
+              onDuplicate={onDuplicateKeyframe}
+              onUpdate={onUpdateKeyframe}
             />
           ) : selectedLayer && activeScene ? (
             <LayerInspector

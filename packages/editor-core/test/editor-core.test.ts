@@ -8,8 +8,10 @@ import {
   MAX_EDITOR_HISTORY_REVISIONS,
   applyEditorCommand,
   createDefaultProject,
-  createEffectLayerAddedCommand,
-  createEffectLayerDuplicatedCommand,
+  createKeyframeAddedCommand,
+  createKeyframeDuplicatedCommand,
+  createSceneLayerAddedCommand,
+  createSceneLayerDuplicatedCommand,
   createEditorHistory,
   createGroupAddedCommand,
   createGroupDuplicatedCommand,
@@ -19,6 +21,7 @@ import {
   createSceneDuplicatedCommand,
   EditorCommandError,
   executeEditorCommand,
+  nextAvailableKeyframeBeat,
   paletteTokenUsageCount,
   projectGroupUsageCount,
   redoEditorHistory,
@@ -35,6 +38,10 @@ const GROUP_ID = 'ad56c792-07e6-42d7-84fd-0b509289b4ab';
 const GROUP_COPY_ID = 'bb93ef72-0987-4b53-9924-9a720215ce8a';
 const LAYER_ID = '2ac65eaf-4c2c-482e-b525-1c6e941dd0c8';
 const LAYER_COPY_ID = 'c4793529-a645-4c18-8a4d-5e4f148ee493';
+const BRIGHTNESS_KEY_ID = '11111111-1111-4111-8111-111111111111';
+const BRIGHTNESS_KEY_2_ID = '22222222-2222-4222-8222-222222222222';
+const COLOUR_KEY_ID = '33333333-3333-4333-8333-333333333333';
+const KEY_COPY_ID = '44444444-4444-4444-8444-444444444444';
 
 function ids(...values: string[]): ProjectEntityIdFactory {
   let index = 0;
@@ -256,7 +263,7 @@ describe('editor commands', () => {
 
     project = applyEditorCommand(
       project,
-      createEffectLayerAddedCommand(
+      createSceneLayerAddedCommand(
         project,
         SCENE_ID,
         'pulse',
@@ -301,7 +308,7 @@ describe('editor commands', () => {
     });
     project = applyEditorCommand(
       project,
-      createEffectLayerAddedCommand(
+      createSceneLayerAddedCommand(
         project,
         SCENE_ID,
         'chase',
@@ -311,7 +318,7 @@ describe('editor commands', () => {
     );
     project = applyEditorCommand(
       project,
-      createEffectLayerDuplicatedCommand(
+      createSceneLayerDuplicatedCommand(
         project,
         SCENE_ID,
         LAYER_ID,
@@ -326,21 +333,21 @@ describe('editor commands', () => {
       id: LAYER_COPY_ID,
       sceneId: SCENE_ID,
       toIndex: 0,
-      type: 'effect-layer-moved',
+      type: 'scene-layer-moved',
     });
     expect(project.scenes[0].layers[0].id).toBe(LAYER_COPY_ID);
     project = applyEditorCommand(project, {
       changes: { endBeat: 3, locked: true, startBeat: 1 },
       id: LAYER_ID,
       sceneId: SCENE_ID,
-      type: 'effect-layer-updated',
+      type: 'scene-layer-updated',
     });
     expect(() =>
       applyEditorCommand(project, {
         changes: { startBeat: 0 },
         id: LAYER_ID,
         sceneId: SCENE_ID,
-        type: 'effect-layer-updated',
+        type: 'scene-layer-updated',
       }),
     ).toThrow(
       expect.objectContaining<Partial<EditorCommandError>>({
@@ -353,19 +360,235 @@ describe('editor commands', () => {
         id: SCENE_ID,
         type: 'scene-updated',
       }),
-    ).toThrow(/Move or resize/);
+    ).toThrow(/Adjust it first/);
     project = applyEditorCommand(project, {
       changes: { locked: false },
       id: LAYER_ID,
       sceneId: SCENE_ID,
-      type: 'effect-layer-updated',
+      type: 'scene-layer-updated',
     });
     project = applyEditorCommand(project, {
       id: LAYER_ID,
       sceneId: SCENE_ID,
-      type: 'effect-layer-deleted',
+      type: 'scene-layer-deleted',
     });
     expect(project.scenes[0].layers).toHaveLength(1);
+    expectValid(project);
+  });
+
+  it('authors, crops, locks, duplicates, and deletes keyframe layers and keys', () => {
+    let project = applyEditorCommand(projectWithPalette(), {
+      id: SCENE_ID,
+      type: 'scene-added',
+    });
+    project = applyEditorCommand(
+      project,
+      createSceneLayerAddedCommand(
+        project,
+        SCENE_ID,
+        'keyframe',
+        { groupId: 'all-leds', kind: 'profile-group' },
+        ids(LAYER_ID),
+      ),
+    );
+    let layer = project.scenes[0].layers[0];
+    expect(layer).toMatchObject({
+      endBeat: 4,
+      kind: 'keyframe',
+      name: 'Keyframes',
+      startBeat: 0,
+    });
+    if (layer.kind !== 'keyframe') throw new Error('Expected keyframe layer');
+    expect(layer.tracks.brightness.keyframes).toEqual([]);
+
+    project = applyEditorCommand(
+      project,
+      createKeyframeAddedCommand(
+        project,
+        SCENE_ID,
+        LAYER_ID,
+        1,
+        { brightnessPercent: 80, track: 'brightness' },
+        ids(BRIGHTNESS_KEY_ID),
+      ),
+    );
+    project = applyEditorCommand(
+      project,
+      createKeyframeAddedCommand(
+        project,
+        SCENE_ID,
+        LAYER_ID,
+        0.5,
+        { brightnessPercent: 20, track: 'brightness' },
+        ids(BRIGHTNESS_KEY_2_ID),
+      ),
+    );
+    project = applyEditorCommand(
+      project,
+      createKeyframeAddedCommand(
+        project,
+        SCENE_ID,
+        LAYER_ID,
+        1,
+        { paletteTokenId: HOT_PINK_ID, track: 'colour' },
+        ids(COLOUR_KEY_ID),
+      ),
+    );
+    layer = project.scenes[0].layers[0];
+    if (layer.kind !== 'keyframe') throw new Error('Expected keyframe layer');
+    expect(layer.tracks.brightness.keyframes.map(({ beat }) => beat)).toEqual([
+      0.5, 1,
+    ]);
+    expect(paletteTokenUsageCount(project, HOT_PINK_ID)).toBe(1);
+    expect(() =>
+      applyEditorCommand(project, {
+        changes: { beat: 0.5 },
+        id: BRIGHTNESS_KEY_ID,
+        layerId: LAYER_ID,
+        sceneId: SCENE_ID,
+        track: 'brightness',
+        type: 'keyframe-updated',
+      }),
+    ).toThrow(/already exists/);
+
+    project = applyEditorCommand(project, {
+      changes: { beat: 1.25, brightnessPercent: 90 },
+      id: BRIGHTNESS_KEY_ID,
+      layerId: LAYER_ID,
+      sceneId: SCENE_ID,
+      track: 'brightness',
+      type: 'keyframe-updated',
+    });
+    project = applyEditorCommand(project, {
+      changes: { endBeat: 3, startBeat: 1.5 },
+      id: LAYER_ID,
+      sceneId: SCENE_ID,
+      type: 'scene-layer-updated',
+    });
+    layer = project.scenes[0].layers[0];
+    if (layer.kind !== 'keyframe') throw new Error('Expected keyframe layer');
+    expect(layer.tracks.brightness.keyframes.map(({ beat }) => beat)).toEqual([
+      0.5, 1.25,
+    ]);
+    expect(nextAvailableKeyframeBeat(layer, 'brightness', 1.25, 4)).toBe(1.5);
+
+    project = applyEditorCommand(
+      project,
+      createKeyframeDuplicatedCommand(
+        project,
+        SCENE_ID,
+        LAYER_ID,
+        'brightness',
+        BRIGHTNESS_KEY_ID,
+        ids(KEY_COPY_ID),
+      ),
+    );
+    layer = project.scenes[0].layers[0];
+    if (layer.kind !== 'keyframe') throw new Error('Expected keyframe layer');
+    expect(layer.tracks.brightness.keyframes.at(-1)).toMatchObject({
+      beat: 1.5,
+      brightnessPercent: 90,
+      id: KEY_COPY_ID,
+    });
+
+    project = applyEditorCommand(project, {
+      changes: { locked: true },
+      id: LAYER_ID,
+      sceneId: SCENE_ID,
+      type: 'scene-layer-updated',
+    });
+    expect(() =>
+      applyEditorCommand(project, {
+        id: KEY_COPY_ID,
+        layerId: LAYER_ID,
+        sceneId: SCENE_ID,
+        track: 'brightness',
+        type: 'keyframe-deleted',
+      }),
+    ).toThrow(
+      expect.objectContaining<Partial<EditorCommandError>>({
+        code: 'locked-entity',
+      }),
+    );
+    project = applyEditorCommand(project, {
+      changes: { locked: false },
+      id: LAYER_ID,
+      sceneId: SCENE_ID,
+      type: 'scene-layer-updated',
+    });
+    project = applyEditorCommand(project, {
+      id: KEY_COPY_ID,
+      layerId: LAYER_ID,
+      sceneId: SCENE_ID,
+      track: 'brightness',
+      type: 'keyframe-deleted',
+    });
+    expectValid(project);
+  });
+
+  it('remaps nested keyframe IDs when duplicating layers and scenes', () => {
+    let project = applyEditorCommand(projectWithPalette(), {
+      id: SCENE_ID,
+      type: 'scene-added',
+    });
+    project = applyEditorCommand(
+      project,
+      createSceneLayerAddedCommand(
+        project,
+        SCENE_ID,
+        'keyframe',
+        { groupId: 'all-leds', kind: 'profile-group' },
+        ids(LAYER_ID),
+      ),
+    );
+    project = applyEditorCommand(
+      project,
+      createKeyframeAddedCommand(
+        project,
+        SCENE_ID,
+        LAYER_ID,
+        0,
+        { brightnessPercent: 50, track: 'brightness' },
+        ids(BRIGHTNESS_KEY_ID),
+      ),
+    );
+    project = applyEditorCommand(
+      project,
+      createSceneLayerDuplicatedCommand(
+        project,
+        SCENE_ID,
+        LAYER_ID,
+        ids(BRIGHTNESS_KEY_2_ID, LAYER_COPY_ID),
+      ),
+    );
+    const layerCopy = project.scenes[0].layers[1];
+    if (layerCopy.kind !== 'keyframe')
+      throw new Error('Expected keyframe layer');
+    expect(layerCopy.tracks.brightness.keyframes[0].id).toBe(
+      BRIGHTNESS_KEY_2_ID,
+    );
+
+    const duplicate = createSceneDuplicatedCommand(
+      project,
+      SCENE_ID,
+      ids(
+        SCENE_COPY_ID,
+        '55555555-5555-4555-8555-555555555555',
+        '66666666-6666-4666-8666-666666666666',
+        '77777777-7777-4777-8777-777777777777',
+        '88888888-8888-4888-8888-888888888888',
+      ),
+    );
+    project = applyEditorCommand(project, duplicate);
+    const copiedIds = project.scenes[1].layers.flatMap((candidate) => [
+      candidate.id,
+      ...(candidate.kind === 'keyframe'
+        ? candidate.tracks.brightness.keyframes.map(({ id }) => id)
+        : []),
+    ]);
+    expect(new Set(copiedIds).size).toBe(copiedIds.length);
+    expect(copiedIds).not.toContain(LAYER_ID);
+    expect(copiedIds).not.toContain(BRIGHTNESS_KEY_ID);
     expectValid(project);
   });
 

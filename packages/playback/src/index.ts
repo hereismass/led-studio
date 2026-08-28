@@ -1,9 +1,13 @@
 import type { HardwareProfile } from '@led-studio/hardware-profiles';
 import type {
+  BrightnessKeyframe,
+  ColourKeyframeTrack,
   EffectLayer,
+  KeyframeLayer,
   PaletteToken,
   ProjectGroup,
   Scene,
+  SceneLayer,
 } from '@led-studio/project-format';
 
 export interface EvaluatedLed {
@@ -19,6 +23,85 @@ export interface SceneEvaluator {
   readonly frame: LedFrame;
   readonly isDynamic: boolean;
   getFrame(positionBeats: number): LedFrame;
+}
+
+function surroundingKeyframes<T extends { beat: number }>(
+  keyframes: readonly T[],
+  position: number,
+): { left: T; right: T; progress: number } | null {
+  if (keyframes.length === 0) return null;
+  const first = keyframes[0];
+  const last = keyframes[keyframes.length - 1];
+  if (position <= first.beat) return { left: first, progress: 0, right: first };
+  if (position >= last.beat) return { left: last, progress: 0, right: last };
+  const rightIndex = keyframes.findIndex(({ beat }) => beat >= position);
+  const left = keyframes[rightIndex - 1];
+  const right = keyframes[rightIndex];
+  return {
+    left,
+    progress: (position - left.beat) / (right.beat - left.beat),
+    right,
+  };
+}
+
+export function evaluateBrightnessTrack(
+  keyframes: readonly BrightnessKeyframe[],
+  positionBeats: number,
+): number | null {
+  const segment = surroundingKeyframes(keyframes, positionBeats);
+  if (!segment) return null;
+  return (
+    segment.left.brightnessPercent +
+    (segment.right.brightnessPercent - segment.left.brightnessPercent) *
+      segment.progress
+  );
+}
+
+function colourChannels(value: string): [number, number, number] {
+  return [
+    Number.parseInt(value.slice(1, 3), 16),
+    Number.parseInt(value.slice(3, 5), 16),
+    Number.parseInt(value.slice(5, 7), 16),
+  ];
+}
+
+function interpolateColour(left: string, right: string, progress: number) {
+  const leftChannels = colourChannels(left);
+  const rightChannels = colourChannels(right);
+  return `#${leftChannels
+    .map((channel, index) =>
+      Math.round(channel + (rightChannels[index] - channel) * progress)
+        .toString(16)
+        .padStart(2, '0')
+        .toUpperCase(),
+    )
+    .join('')}`;
+}
+
+export function evaluateColourTrack(
+  track: ColourKeyframeTrack,
+  colours: ReadonlyMap<string, string>,
+  positionBeats: number,
+): string | null {
+  const segment = surroundingKeyframes(track.keyframes, positionBeats);
+  if (!segment) return null;
+  const left = colours.get(segment.left.paletteTokenId);
+  const right = colours.get(segment.right.paletteTokenId);
+  if (!left || !right) {
+    const missing = !left
+      ? segment.left.paletteTokenId
+      : segment.right.paletteTokenId;
+    throw new Error(
+      `Colour keyframe references unknown palette token "${missing}"`,
+    );
+  }
+  if (
+    track.interpolation === 'step' ||
+    segment.left === segment.right ||
+    segment.progress === 0
+  )
+    return left;
+  return interpolateColour(left, right, segment.progress);
 }
 
 function requireFinitePositive(value: number, name: string): void {
@@ -116,7 +199,7 @@ export function compileSceneEvaluator(
     if (!targetLedIds) {
       const groupTarget = target as Exclude<typeof target, { kind: 'leds' }>;
       throw new Error(
-        `Effect layer "${layer.name}" references unknown ${groupTarget.kind === 'profile-group' ? 'profile' : 'project'} group "${groupTarget.groupId}"`,
+        `Layer "${layer.name}" references unknown ${groupTarget.kind === 'profile-group' ? 'profile' : 'project'} group "${groupTarget.groupId}"`,
       );
     }
     const orderedLedIds = [...targetLedIds].sort(
@@ -125,19 +208,35 @@ export function compileSceneEvaluator(
     orderedLedIds.forEach((ledId) => {
       if (!profileLedIds.has(ledId)) {
         throw new Error(
-          `Effect layer "${layer.name}" references unknown LED "${ledId}"`,
+          `Layer "${layer.name}" references unknown LED "${ledId}"`,
         );
       }
     });
-    const colour = colours.get(layer.effect.paletteTokenId);
-    if (!colour) {
-      throw new Error(
-        `Effect layer "${layer.name}" references unknown palette token "${layer.effect.paletteTokenId}"`,
-      );
+    if (layer.kind === 'effect') {
+      const colour = colours.get(layer.effect.paletteTokenId);
+      if (!colour) {
+        throw new Error(
+          `Effect layer "${layer.name}" references unknown palette token "${layer.effect.paletteTokenId}"`,
+        );
+      }
+      return { colour, layer, orderedLedIds };
     }
-    return { colour, layer, orderedLedIds };
+    layer.tracks.colour.keyframes.forEach((keyframe) => {
+      if (!colours.has(keyframe.paletteTokenId)) {
+        throw new Error(
+          `Colour keyframe references unknown palette token "${keyframe.paletteTokenId}"`,
+        );
+      }
+    });
+    return { colour: null, layer, orderedLedIds };
   });
-  const dynamic = compiledLayers.some(({ layer }) => layer.enabled);
+  const dynamic = compiledLayers.some(
+    ({ layer }) =>
+      layer.enabled &&
+      (layer.kind === 'effect' ||
+        layer.tracks.brightness.keyframes.length > 0 ||
+        layer.tracks.colour.keyframes.length > 0),
+  );
   let lastFrame: LedFrame | null = null;
   let lastStateKey: string | null = null;
 
@@ -206,6 +305,28 @@ export function compileSceneEvaluator(
     });
   }
 
+  function applyKeyframes(
+    frameById: Map<string, EvaluatedLed>,
+    layer: KeyframeLayer,
+    ledIds: readonly string[],
+    position: number,
+  ): void {
+    const brightness = evaluateBrightnessTrack(
+      layer.tracks.brightness.keyframes,
+      position,
+    );
+    const colour = evaluateColourTrack(layer.tracks.colour, colours, position);
+    if (brightness === null && colour === null) return;
+    ledIds.forEach((ledId) => {
+      const current = frameById.get(ledId)!;
+      frameById.set(ledId, {
+        ...current,
+        ...(brightness === null ? {} : { brightnessPercent: brightness }),
+        ...(colour === null ? {} : { colour }),
+      });
+    });
+  }
+
   function getFrame(positionBeats: number): LedFrame {
     const position = normalizeLoopPosition(
       positionBeats,
@@ -220,6 +341,7 @@ export function compileSceneEvaluator(
           position >= layer.endBeat
         )
           return '-';
+        if (layer.kind === 'keyframe') return `k${position}`;
         return layer.effect.type === 'pulse'
           ? `p${position}`
           : `c${Math.floor((position - layer.startBeat) / layer.effect.stepLengthBeats)}`;
@@ -235,9 +357,11 @@ export function compileSceneEvaluator(
         position >= layer.endBeat
       )
         continue;
-      if (layer.effect.type === 'pulse')
-        applyPulse(frameById, layer, orderedLedIds, colour, position);
-      else applyChase(frameById, layer, orderedLedIds, colour, position);
+      if (layer.kind === 'keyframe') {
+        applyKeyframes(frameById, layer, orderedLedIds, position);
+      } else if (layer.effect.type === 'pulse')
+        applyPulse(frameById, layer, orderedLedIds, colour!, position);
+      else applyChase(frameById, layer, orderedLedIds, colour!, position);
     }
     lastStateKey = stateKey;
     lastFrame = profile.leds.map((led) => frameById.get(led.id)!);

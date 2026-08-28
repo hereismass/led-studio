@@ -1,12 +1,15 @@
-import type { ExecuteEditorCommandOptions } from '@led-studio/editor-core';
+import type {
+  ExecuteEditorCommandOptions,
+  SceneLayerChanges,
+} from '@led-studio/editor-core';
 import type { HardwareProfile } from '@led-studio/hardware-profiles';
 import type {
   Effect,
-  EffectLayer,
-  EffectTarget,
+  LayerTarget,
   PaletteToken,
   ProjectGroup,
   Scene,
+  SceneLayer,
 } from '@led-studio/project-format';
 import { useEffect, useState, type KeyboardEvent } from 'react';
 import { ChoiceMenu, type ChoiceMenuOption } from './ChoiceMenu';
@@ -76,7 +79,7 @@ function NumberDraft({
 
 interface LayerInspectorProps {
   groups: readonly ProjectGroup[];
-  layer: EffectLayer;
+  layer: SceneLayer;
   palette: readonly PaletteToken[];
   profile: HardwareProfile;
   scene: Scene;
@@ -85,12 +88,12 @@ interface LayerInspectorProps {
   onDuplicate: () => void;
   onMove: (toIndex: number) => void;
   onUpdate: (
-    changes: Partial<Omit<EffectLayer, 'id'>>,
+    changes: SceneLayerChanges,
     options?: ExecuteEditorCommandOptions,
   ) => void;
 }
 
-function targetValue(target: EffectTarget): string {
+function targetValue(target: LayerTarget): string {
   return target.kind === 'leds' ? 'leds' : `${target.kind}:${target.groupId}`;
 }
 
@@ -109,9 +112,10 @@ export function LayerInspector({
   const [name, setName] = useState(layer.name);
   const index = scene.layers.findIndex(({ id }) => id === layer.id);
   const editingDisabled = layer.locked;
-  const selectedColour = palette.find(
-    ({ id }) => id === layer.effect.paletteTokenId,
-  );
+  const selectedColour =
+    layer.kind === 'effect'
+      ? palette.find(({ id }) => id === layer.effect.paletteTokenId)
+      : null;
   const targetOptions: ChoiceMenuOption[] = [
     {
       disabled: selectedLedIds.length === 0 && layer.target.kind !== 'leds',
@@ -139,14 +143,19 @@ export function LayerInspector({
   useEffect(() => setName(layer.name), [layer.id, layer.name]);
 
   function updateEffect(changes: Partial<Effect>) {
-    onUpdate({ effect: { ...layer.effect, ...changes } as Effect });
+    if (layer.kind === 'effect')
+      onUpdate({ effect: { ...layer.effect, ...changes } as Effect });
   }
 
   return (
     <section className="inspector-section layer-inspector">
       <div className="layer-inspector-heading">
         <div>
-          <p className="workspace-eyebrow">{layer.effect.type} effect</p>
+          <p className="workspace-eyebrow">
+            {layer.kind === 'effect'
+              ? `${layer.effect.type} effect`
+              : 'Keyframe layer'}
+          </p>
           <h3>{layer.name}</h3>
         </div>
         <label className="layer-toggle">
@@ -179,7 +188,7 @@ export function LayerInspector({
       <div className="inspector-field">
         <span>Target</span>
         <ChoiceMenu
-          ariaLabel="Effect target"
+          ariaLabel="Layer target"
           disabled={editingDisabled}
           options={targetOptions}
           value={targetValue(layer.target)}
@@ -226,128 +235,157 @@ export function LayerInspector({
           onCommit={(endBeat) => onUpdate({ endBeat })}
         />
       </div>
-      <div className="inspector-field">
-        <span>Colour · {selectedColour?.name ?? 'Unavailable'}</span>
-        <PaletteSwatches
-          disabled={editingDisabled}
-          palette={palette}
-          selectedTokenId={layer.effect.paletteTokenId}
-          onSelect={(paletteTokenId) => updateEffect({ paletteTokenId })}
-        />
-      </div>
-      {layer.effect.type === 'pulse' ? (
+      {layer.kind === 'keyframe' ? (
         <>
-          <div className="inspector-field-grid">
-            <NumberDraft
-              disabled={editingDisabled}
-              label="Minimum brightness"
-              min={0}
-              max={100}
-              step={1}
-              value={layer.effect.minBrightnessPercent}
-              onCommit={(minBrightnessPercent) =>
-                updateEffect({ minBrightnessPercent })
-              }
-            />
-            <NumberDraft
-              disabled={editingDisabled}
-              label="Maximum brightness"
-              min={0}
-              max={100}
-              step={1}
-              value={layer.effect.maxBrightnessPercent}
-              onCommit={(maxBrightnessPercent) =>
-                updateEffect({ maxBrightnessPercent })
-              }
-            />
-            <NumberDraft
-              disabled={editingDisabled}
-              label="Cycle length (beats)"
-              min={0.25}
-              step={0.25}
-              value={layer.effect.cycleLengthBeats}
-              onCommit={(cycleLengthBeats) =>
-                updateEffect({ cycleLengthBeats })
-              }
-            />
-            <NumberDraft
-              disabled={editingDisabled}
-              label="Phase offset (beats)"
-              min={0}
-              step={0.25}
-              value={layer.effect.phaseOffsetBeats}
-              onCommit={(phaseOffsetBeats) =>
-                updateEffect({ phaseOffsetBeats })
-              }
-            />
-          </div>
           <div className="inspector-field">
-            <span>Waveform</span>
+            <span>Colour interpolation</span>
             <SegmentedControl
-              ariaLabel="Waveform"
+              ariaLabel="Colour interpolation"
               disabled={editingDisabled}
               options={[
-                { label: 'Sine', value: 'sine' },
-                { label: 'Triangle', value: 'triangle' },
-                { label: 'Square', value: 'square' },
+                { label: 'Smooth RGB', value: 'linear-rgb' },
+                { label: 'Step', value: 'step' },
               ]}
-              value={layer.effect.waveform}
-              onChange={(waveform) => updateEffect({ waveform })}
+              value={layer.tracks.colour.interpolation}
+              onChange={(colourInterpolation) =>
+                onUpdate({ colourInterpolation })
+              }
             />
           </div>
+          <p className="inspector-help">
+            {layer.tracks.brightness.keyframes.length} brightness and{' '}
+            {layer.tracks.colour.keyframes.length} colour keyframes. The active
+            window masks keys without deleting or retiming them.
+          </p>
         </>
       ) : (
         <>
-          <div className="inspector-field-grid">
-            <NumberDraft
-              disabled={editingDisabled}
-              label="Brightness"
-              min={0}
-              max={100}
-              step={1}
-              value={layer.effect.brightnessPercent}
-              onCommit={(brightnessPercent) =>
-                updateEffect({ brightnessPercent })
-              }
-            />
-            <NumberDraft
-              disabled={editingDisabled}
-              label="Step length (beats)"
-              min={0.25}
-              step={0.25}
-              value={layer.effect.stepLengthBeats}
-              onCommit={(stepLengthBeats) => updateEffect({ stepLengthBeats })}
-            />
-            <NumberDraft
-              disabled={editingDisabled}
-              label="Head width"
-              min={1}
-              step={1}
-              value={layer.effect.width}
-              onCommit={(width) => updateEffect({ width })}
-            />
-            <NumberDraft
-              disabled={editingDisabled}
-              label="Trail length"
-              min={0}
-              step={1}
-              value={layer.effect.trailLength}
-              onCommit={(trailLength) => updateEffect({ trailLength })}
-            />
-          </div>
           <div className="inspector-field">
-            <span>Direction</span>
-            <SegmentedControl
-              ariaLabel="Direction"
+            <span>Colour · {selectedColour?.name ?? 'Unavailable'}</span>
+            <PaletteSwatches
               disabled={editingDisabled}
-              options={[
-                { label: 'Forward', value: 'forward' },
-                { label: 'Reverse', value: 'reverse' },
-              ]}
-              value={layer.effect.direction}
-              onChange={(direction) => updateEffect({ direction })}
+              palette={palette}
+              selectedTokenId={layer.effect.paletteTokenId}
+              onSelect={(paletteTokenId) => updateEffect({ paletteTokenId })}
             />
           </div>
+          {layer.effect.type === 'pulse' ? (
+            <>
+              <div className="inspector-field-grid">
+                <NumberDraft
+                  disabled={editingDisabled}
+                  label="Minimum brightness"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={layer.effect.minBrightnessPercent}
+                  onCommit={(minBrightnessPercent) =>
+                    updateEffect({ minBrightnessPercent })
+                  }
+                />
+                <NumberDraft
+                  disabled={editingDisabled}
+                  label="Maximum brightness"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={layer.effect.maxBrightnessPercent}
+                  onCommit={(maxBrightnessPercent) =>
+                    updateEffect({ maxBrightnessPercent })
+                  }
+                />
+                <NumberDraft
+                  disabled={editingDisabled}
+                  label="Cycle length (beats)"
+                  min={0.25}
+                  step={0.25}
+                  value={layer.effect.cycleLengthBeats}
+                  onCommit={(cycleLengthBeats) =>
+                    updateEffect({ cycleLengthBeats })
+                  }
+                />
+                <NumberDraft
+                  disabled={editingDisabled}
+                  label="Phase offset (beats)"
+                  min={0}
+                  step={0.25}
+                  value={layer.effect.phaseOffsetBeats}
+                  onCommit={(phaseOffsetBeats) =>
+                    updateEffect({ phaseOffsetBeats })
+                  }
+                />
+              </div>
+              <div className="inspector-field">
+                <span>Waveform</span>
+                <SegmentedControl
+                  ariaLabel="Waveform"
+                  disabled={editingDisabled}
+                  options={[
+                    { label: 'Sine', value: 'sine' },
+                    { label: 'Triangle', value: 'triangle' },
+                    { label: 'Square', value: 'square' },
+                  ]}
+                  value={layer.effect.waveform}
+                  onChange={(waveform) => updateEffect({ waveform })}
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="inspector-field-grid">
+                <NumberDraft
+                  disabled={editingDisabled}
+                  label="Brightness"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={layer.effect.brightnessPercent}
+                  onCommit={(brightnessPercent) =>
+                    updateEffect({ brightnessPercent })
+                  }
+                />
+                <NumberDraft
+                  disabled={editingDisabled}
+                  label="Step length (beats)"
+                  min={0.25}
+                  step={0.25}
+                  value={layer.effect.stepLengthBeats}
+                  onCommit={(stepLengthBeats) =>
+                    updateEffect({ stepLengthBeats })
+                  }
+                />
+                <NumberDraft
+                  disabled={editingDisabled}
+                  label="Head width"
+                  min={1}
+                  step={1}
+                  value={layer.effect.width}
+                  onCommit={(width) => updateEffect({ width })}
+                />
+                <NumberDraft
+                  disabled={editingDisabled}
+                  label="Trail length"
+                  min={0}
+                  step={1}
+                  value={layer.effect.trailLength}
+                  onCommit={(trailLength) => updateEffect({ trailLength })}
+                />
+              </div>
+              <div className="inspector-field">
+                <span>Direction</span>
+                <SegmentedControl
+                  ariaLabel="Direction"
+                  disabled={editingDisabled}
+                  options={[
+                    { label: 'Forward', value: 'forward' },
+                    { label: 'Reverse', value: 'reverse' },
+                  ]}
+                  value={layer.effect.direction}
+                  onChange={(direction) => updateEffect({ direction })}
+                />
+              </div>
+            </>
+          )}
         </>
       )}
       <div className="layer-lock-control">

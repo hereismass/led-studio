@@ -5,10 +5,12 @@ import {
 import {
   DEFAULT_PROJECT_TIMING,
   HexColourSchema,
-  EffectLayerNameSchema,
+  BrightnessKeyframeSchema,
+  ColourKeyframeSchema,
   EffectLayerSchema,
   EffectSchema,
-  EffectTargetSchema,
+  KeyframeLayerSchema,
+  LayerTargetSchema,
   PaletteTokenNameSchema,
   PaletteTokenSchema,
   PROJECT_SCHEMA_VERSION,
@@ -18,20 +20,41 @@ import {
   ProjectNameSchema,
   ProjectTimingSchema,
   SceneBrightnessPercentSchema,
+  SceneLayerNameSchema,
+  SceneLayerSchema,
   SceneLoopLengthSchema,
   SceneNameSchema,
   parseProject,
   type PaletteToken,
   type Effect,
   type EffectLayer,
-  type EffectTarget,
+  type KeyframeLayer,
+  type LayerTarget,
   type Project,
   type ProjectGroup,
   type ProjectTiming,
   type Scene,
+  type SceneLayer,
 } from '@led-studio/project-format';
 
 export const MAX_EDITOR_HISTORY_REVISIONS = 200;
+
+export type KeyframeTrackKind = 'brightness' | 'colour';
+
+export interface SceneLayerChanges {
+  colourInterpolation?: KeyframeLayer['tracks']['colour']['interpolation'];
+  effect?: Effect;
+  enabled?: boolean;
+  endBeat?: number;
+  locked?: boolean;
+  name?: string;
+  startBeat?: number;
+  target?: LayerTarget;
+}
+
+export type KeyframeValue =
+  | { brightnessPercent: number; track: 'brightness' }
+  | { paletteTokenId: string; track: 'colour' };
 
 export type EditorCommand =
   | { name: string; type: 'project-renamed' }
@@ -47,6 +70,7 @@ export type EditorCommand =
   | { id: string; type: 'scene-added' }
   | {
       id: string;
+      keyframeIds: string[][];
       layerIds: string[];
       sourceId: string;
       type: 'scene-duplicated';
@@ -79,30 +103,67 @@ export type EditorCommand =
   | { id: string; sourceId: string; type: 'group-duplicated' }
   | { id: string; type: 'group-deleted' }
   | {
-      effectType: Effect['type'];
+      layerType: Effect['type'] | 'keyframe';
       id: string;
       sceneId: string;
-      target: EffectTarget;
-      type: 'effect-layer-added';
+      target: LayerTarget;
+      type: 'scene-layer-added';
     }
   | {
-      changes: Partial<Omit<EffectLayer, 'id'>>;
+      changes: SceneLayerChanges;
       id: string;
       sceneId: string;
-      type: 'effect-layer-updated';
+      type: 'scene-layer-updated';
     }
   | {
       id: string;
+      keyframeIds: string[];
       newId: string;
       sceneId: string;
-      type: 'effect-layer-duplicated';
+      type: 'scene-layer-duplicated';
     }
-  | { id: string; sceneId: string; type: 'effect-layer-deleted' }
+  | { id: string; sceneId: string; type: 'scene-layer-deleted' }
   | {
       id: string;
       sceneId: string;
       toIndex: number;
-      type: 'effect-layer-moved';
+      type: 'scene-layer-moved';
+    }
+  | {
+      beat: number;
+      id: string;
+      layerId: string;
+      sceneId: string;
+      type: 'keyframe-added';
+      value: KeyframeValue;
+    }
+  | {
+      changes: {
+        beat?: number;
+        brightnessPercent?: number;
+        paletteTokenId?: string;
+      };
+      id: string;
+      layerId: string;
+      sceneId: string;
+      track: KeyframeTrackKind;
+      type: 'keyframe-updated';
+    }
+  | {
+      id: string;
+      layerId: string;
+      newBeat: number;
+      newId: string;
+      sceneId: string;
+      track: KeyframeTrackKind;
+      type: 'keyframe-duplicated';
+    }
+  | {
+      id: string;
+      layerId: string;
+      sceneId: string;
+      track: KeyframeTrackKind;
+      type: 'keyframe-deleted';
     };
 
 export type EditorCommandErrorCode =
@@ -201,6 +262,16 @@ function allEntityIds(project: Project): Set<string> {
     ...project.groups.map((group) => group.id),
     ...project.scenes.map((scene) => scene.id),
     ...project.scenes.flatMap((scene) => scene.layers.map((layer) => layer.id)),
+    ...project.scenes.flatMap((scene) =>
+      scene.layers.flatMap((layer) =>
+        layer.kind === 'keyframe'
+          ? [
+              ...layer.tracks.brightness.keyframes.map(({ id }) => id),
+              ...layer.tracks.colour.keyframes.map(({ id }) => id),
+            ]
+          : [],
+      ),
+    ),
   ]);
 }
 
@@ -263,7 +334,7 @@ function layerIndex(scene: Scene, id: string): number {
   if (index === -1) {
     throw new EditorCommandError(
       'missing-entity',
-      `Effect layer "${id}" does not exist.`,
+      `Layer "${id}" does not exist.`,
     );
   }
   return index;
@@ -340,7 +411,7 @@ function assertUniqueLayerName(
   ) {
     throw new EditorCommandError(
       'duplicate-name',
-      `Effect layer name "${name}" is already in use.`,
+      `Layer name "${name}" is already in use.`,
     );
   }
 }
@@ -381,8 +452,8 @@ function canonicalLedIds(
     .map((led) => led.id);
 }
 
-function assertTarget(project: Project, target: EffectTarget): EffectTarget {
-  const parsed = parseCommandValue(EffectTargetSchema, target);
+function assertTarget(project: Project, target: LayerTarget): LayerTarget {
+  const parsed = parseCommandValue(LayerTargetSchema, target);
   if (parsed.kind === 'leds') {
     return { ...parsed, ledIds: canonicalLedIds(project, parsed.ledIds) };
   }
@@ -423,7 +494,19 @@ export function paletteTokenUsageCount(project: Project, id: string): number {
       Object.values(scene.ledStates).filter(
         (state) => state.paletteTokenId === id,
       ).length +
-      scene.layers.filter((layer) => layer.effect.paletteTokenId === id).length,
+      scene.layers.reduce(
+        (layerTotal, layer) =>
+          layerTotal +
+          (layer.kind === 'effect' && layer.effect.paletteTokenId === id
+            ? 1
+            : 0) +
+          (layer.kind === 'keyframe'
+            ? layer.tracks.colour.keyframes.filter(
+                (keyframe) => keyframe.paletteTokenId === id,
+              ).length
+            : 0),
+        0,
+      ),
     0,
   );
 }
@@ -518,6 +601,14 @@ export function createSceneDuplicatedCommand(
   };
   return {
     id: nextId(),
+    keyframeIds: source.layers.map((layer) =>
+      layer.kind === 'keyframe'
+        ? [
+            ...layer.tracks.brightness.keyframes.map(nextId),
+            ...layer.tracks.colour.keyframes.map(nextId),
+          ]
+        : [],
+    ),
     layerIds: source.layers.map(nextId),
     sourceId,
     type: 'scene-duplicated',
@@ -549,35 +640,141 @@ export function createGroupDuplicatedCommand(
   };
 }
 
-export function createEffectLayerAddedCommand(
+export function createSceneLayerAddedCommand(
   project: Project,
   sceneId: string,
-  effectType: Effect['type'],
-  target: EffectTarget,
+  layerType: Effect['type'] | 'keyframe',
+  target: LayerTarget,
   idFactory: ProjectEntityIdFactory = generateProjectEntityId,
-): Extract<EditorCommand, { type: 'effect-layer-added' }> {
+): Extract<EditorCommand, { type: 'scene-layer-added' }> {
   sceneIndex(project, sceneId);
   return {
-    effectType,
+    layerType,
     id: createEntityId(project, idFactory),
     sceneId,
     target: assertTarget(project, target),
-    type: 'effect-layer-added',
+    type: 'scene-layer-added',
   };
 }
 
-export function createEffectLayerDuplicatedCommand(
+export function createSceneLayerDuplicatedCommand(
   project: Project,
   sceneId: string,
   id: string,
   idFactory: ProjectEntityIdFactory = generateProjectEntityId,
-): Extract<EditorCommand, { type: 'effect-layer-duplicated' }> {
-  layerIndex(project.scenes[sceneIndex(project, sceneId)], id);
+): Extract<EditorCommand, { type: 'scene-layer-duplicated' }> {
+  const layer =
+    project.scenes[sceneIndex(project, sceneId)].layers[
+      layerIndex(project.scenes[sceneIndex(project, sceneId)], id)
+    ];
+  const reserved = allEntityIds(project);
+  const nextId = () => {
+    let next = ProjectEntityIdSchema.parse(idFactory());
+    while (reserved.has(next)) next = ProjectEntityIdSchema.parse(idFactory());
+    reserved.add(next);
+    return next;
+  };
   return {
     id,
+    keyframeIds:
+      layer.kind === 'keyframe'
+        ? [
+            ...layer.tracks.brightness.keyframes.map(nextId),
+            ...layer.tracks.colour.keyframes.map(nextId),
+          ]
+        : [],
+    newId: nextId(),
+    sceneId,
+    type: 'scene-layer-duplicated',
+  };
+}
+
+export function createKeyframeAddedCommand(
+  project: Project,
+  sceneId: string,
+  layerId: string,
+  beat: number,
+  value: KeyframeValue,
+  idFactory: ProjectEntityIdFactory = generateProjectEntityId,
+): Extract<EditorCommand, { type: 'keyframe-added' }> {
+  const scene = project.scenes[sceneIndex(project, sceneId)];
+  const layer = scene.layers[layerIndex(scene, layerId)];
+  if (layer.kind !== 'keyframe') {
+    throw new EditorCommandError(
+      'invalid-command',
+      'Keyframes can only be added to a keyframe layer.',
+    );
+  }
+  return {
+    beat,
+    id: createEntityId(project, idFactory),
+    layerId,
+    sceneId,
+    type: 'keyframe-added',
+    value,
+  };
+}
+
+export function nextAvailableKeyframeBeat(
+  layer: KeyframeLayer,
+  track: KeyframeTrackKind,
+  sourceBeat: number,
+  loopLengthBeats: number,
+): number | null {
+  const occupied = new Set(
+    layer.tracks[track].keyframes.map(({ beat }) => beat),
+  );
+  for (let beat = sourceBeat + 0.25; beat <= loopLengthBeats; beat += 0.25)
+    if (!occupied.has(beat)) return beat;
+  for (let beat = sourceBeat - 0.25; beat >= 0; beat -= 0.25)
+    if (!occupied.has(beat)) return beat;
+  return null;
+}
+
+export function createKeyframeDuplicatedCommand(
+  project: Project,
+  sceneId: string,
+  layerId: string,
+  track: KeyframeTrackKind,
+  id: string,
+  idFactory: ProjectEntityIdFactory = generateProjectEntityId,
+): Extract<EditorCommand, { type: 'keyframe-duplicated' }> {
+  const scene = project.scenes[sceneIndex(project, sceneId)];
+  const layer = scene.layers[layerIndex(scene, layerId)];
+  if (layer.kind !== 'keyframe') {
+    throw new EditorCommandError(
+      'invalid-command',
+      'Keyframes can only be duplicated in a keyframe layer.',
+    );
+  }
+  const keyframe = layer.tracks[track].keyframes.find(
+    (candidate) => candidate.id === id,
+  );
+  if (!keyframe)
+    throw new EditorCommandError(
+      'missing-entity',
+      `Keyframe "${id}" does not exist.`,
+    );
+  const newBeat = nextAvailableKeyframeBeat(
+    layer,
+    track,
+    keyframe.beat,
+    scene.loopLengthBeats,
+  );
+  if (newBeat === null) {
+    throw new EditorCommandError(
+      'invalid-command',
+      'There is no free quarter-beat position for a duplicate keyframe.',
+    );
+  }
+  return {
+    id,
+    layerId,
+    newBeat,
     newId: createEntityId(project, idFactory),
     sceneId,
-    type: 'effect-layer-duplicated',
+    track,
+    type: 'keyframe-duplicated',
   };
 }
 
@@ -682,10 +879,13 @@ export function applyEditorCommand(
     case 'scene-duplicated': {
       const sourceIndex = sceneIndex(project, command.sourceId);
       const source = project.scenes[sourceIndex];
-      if (command.layerIds.length !== source.layers.length) {
+      if (
+        command.layerIds.length !== source.layers.length ||
+        command.keyframeIds.length !== source.layers.length
+      ) {
         throw new EditorCommandError(
           'invalid-command',
-          'Scene duplication requires one new ID per effect layer.',
+          'Scene duplication requires new IDs for every layer and keyframe.',
         );
       }
       const duplicateId = assertNewEntityId(project, command.id);
@@ -701,13 +901,65 @@ export function applyEditorCommand(
         duplicateIds.add(parsed);
         return parsed;
       });
+      const nextLayers = source.layers.map((layer, index): SceneLayer => {
+        const cloned = { ...structuredClone(layer), id: layerIds[index] };
+        if (cloned.kind !== 'keyframe') {
+          if (command.keyframeIds[index].length !== 0) {
+            throw new EditorCommandError(
+              'invalid-command',
+              'Effect layers cannot receive keyframe IDs.',
+            );
+          }
+          return cloned;
+        }
+        const expectedCount =
+          cloned.tracks.brightness.keyframes.length +
+          cloned.tracks.colour.keyframes.length;
+        if (command.keyframeIds[index].length !== expectedCount) {
+          throw new EditorCommandError(
+            'invalid-command',
+            'Scene duplication requires one new ID per keyframe.',
+          );
+        }
+        const nextKeyframeIds = command.keyframeIds[index].map((id) => {
+          const parsed = assertNewEntityId(project, id);
+          if (duplicateIds.has(parsed)) {
+            throw new EditorCommandError(
+              'duplicate-entity-id',
+              `Entity ID "${parsed}" is already in use.`,
+            );
+          }
+          duplicateIds.add(parsed);
+          return parsed;
+        });
+        const brightnessCount = cloned.tracks.brightness.keyframes.length;
+        return {
+          ...cloned,
+          tracks: {
+            brightness: {
+              keyframes: cloned.tracks.brightness.keyframes.map(
+                (keyframe, keyframeIndex) => ({
+                  ...keyframe,
+                  id: nextKeyframeIds[keyframeIndex],
+                }),
+              ),
+            },
+            colour: {
+              ...cloned.tracks.colour,
+              keyframes: cloned.tracks.colour.keyframes.map(
+                (keyframe, keyframeIndex) => ({
+                  ...keyframe,
+                  id: nextKeyframeIds[brightnessCount + keyframeIndex],
+                }),
+              ),
+            },
+          },
+        };
+      });
       const duplicate: Scene = {
         ...structuredClone(source),
         id: duplicateId,
-        layers: source.layers.map((layer, index) => ({
-          ...structuredClone(layer),
-          id: layerIds[index],
-        })),
+        layers: nextLayers,
         name: uniqueName(
           project.scenes.map(({ name }) => name),
           `${source.name} Copy`,
@@ -737,10 +989,20 @@ export function applyEditorCommand(
                 SceneLoopLengthSchema,
                 command.changes.loopLengthBeats,
               );
-        if (scene.layers.some((layer) => layer.endBeat > loopLengthBeats)) {
+        if (
+          scene.layers.some(
+            (layer) =>
+              layer.endBeat > loopLengthBeats ||
+              (layer.kind === 'keyframe' &&
+                [
+                  ...layer.tracks.brightness.keyframes,
+                  ...layer.tracks.colour.keyframes,
+                ].some((keyframe) => keyframe.beat > loopLengthBeats)),
+          )
+        ) {
           throw new EditorCommandError(
             'invalid-command',
-            'Scene loop cannot end before an effect layer. Move or resize the layer first.',
+            'Scene loop cannot end before a layer or stored keyframe. Adjust it first.',
           );
         }
         assertUniqueSceneName(project, name, scene.id);
@@ -873,7 +1135,7 @@ export function applyEditorCommand(
       if (referenceCount > 0) {
         throw new EditorCommandError(
           'entity-in-use',
-          `This group is targeted by ${referenceCount} effect ${referenceCount === 1 ? 'layer' : 'layers'}.`,
+          `This group is targeted by ${referenceCount} ${referenceCount === 1 ? 'layer' : 'layers'}.`,
           referenceCount,
         );
       }
@@ -882,53 +1144,70 @@ export function applyEditorCommand(
         groups: project.groups.filter((_, position) => position !== index),
       };
     }
-    case 'effect-layer-added': {
-      if (project.palette.length === 0) {
+    case 'scene-layer-added': {
+      if (command.layerType !== 'keyframe' && project.palette.length === 0) {
         throw new EditorCommandError(
           'invalid-command',
           'Add a palette colour before creating an effect layer.',
         );
       }
       const scene = project.scenes[sceneIndex(project, command.sceneId)];
-      const effect: Effect =
-        command.effectType === 'pulse'
-          ? {
-              cycleLengthBeats: 1,
-              maxBrightnessPercent: 100,
-              minBrightnessPercent: 0,
-              paletteTokenId: project.palette[0].id,
-              phaseOffsetBeats: 0,
-              type: 'pulse',
-              waveform: 'sine',
-            }
-          : {
-              brightnessPercent: 100,
-              direction: 'forward',
-              paletteTokenId: project.palette[0].id,
-              stepLengthBeats: 0.25,
-              trailLength: 0,
-              type: 'chase',
-              width: 1,
-            };
-      const layer = parseCommandValue(EffectLayerSchema, {
-        effect,
+      const common = {
         enabled: true,
         endBeat: scene.loopLengthBeats,
         id: assertNewEntityId(project, command.id),
         locked: false,
-        name: uniqueName(
-          scene.layers.map(({ name }) => name),
-          command.effectType === 'pulse' ? 'Pulse' : 'Chase',
-        ),
         startBeat: 0,
         target: assertTarget(project, command.target),
-      });
+      };
+      const layer: SceneLayer =
+        command.layerType === 'keyframe'
+          ? parseCommandValue(KeyframeLayerSchema, {
+              ...common,
+              kind: 'keyframe',
+              name: uniqueName(
+                scene.layers.map(({ name }) => name),
+                'Keyframes',
+              ),
+              tracks: {
+                brightness: { keyframes: [] },
+                colour: { interpolation: 'linear-rgb', keyframes: [] },
+              },
+            })
+          : parseCommandValue(EffectLayerSchema, {
+              ...common,
+              effect:
+                command.layerType === 'pulse'
+                  ? {
+                      cycleLengthBeats: 1,
+                      maxBrightnessPercent: 100,
+                      minBrightnessPercent: 0,
+                      paletteTokenId: project.palette[0].id,
+                      phaseOffsetBeats: 0,
+                      type: 'pulse',
+                      waveform: 'sine',
+                    }
+                  : {
+                      brightnessPercent: 100,
+                      direction: 'forward',
+                      paletteTokenId: project.palette[0].id,
+                      stepLengthBeats: 0.25,
+                      trailLength: 0,
+                      type: 'chase',
+                      width: 1,
+                    },
+              kind: 'effect',
+              name: uniqueName(
+                scene.layers.map(({ name }) => name),
+                command.layerType === 'pulse' ? 'Pulse' : 'Chase',
+              ),
+            });
       return updateScene(project, scene.id, (current) => ({
         ...current,
         layers: [...current.layers, layer],
       }));
     }
-    case 'effect-layer-updated': {
+    case 'scene-layer-updated': {
       return updateScene(project, command.sceneId, (scene) => {
         const index = layerIndex(scene, command.id);
         const current = scene.layers[index];
@@ -937,25 +1216,54 @@ export function applyEditorCommand(
           if (keys.some((key) => key !== 'enabled' && key !== 'locked')) {
             throw new EditorCommandError(
               'locked-entity',
-              `Effect layer "${current.name}" is locked.`,
+              `Layer "${current.name}" is locked.`,
             );
           }
         }
         const changes = { ...command.changes };
         if (changes.name !== undefined)
-          changes.name = parseCommandValue(EffectLayerNameSchema, changes.name);
-        if (changes.effect !== undefined)
+          changes.name = parseCommandValue(SceneLayerNameSchema, changes.name);
+        if (changes.effect !== undefined) {
+          if (current.kind !== 'effect') {
+            throw new EditorCommandError(
+              'invalid-command',
+              'Only effect layers can update an effect.',
+            );
+          }
           changes.effect = parseCommandValue(EffectSchema, changes.effect);
+        }
+        if (
+          changes.colourInterpolation !== undefined &&
+          current.kind !== 'keyframe'
+        ) {
+          throw new EditorCommandError(
+            'invalid-command',
+            'Only keyframe layers have colour interpolation.',
+          );
+        }
         if (changes.target !== undefined)
           changes.target = assertTarget(project, changes.target);
-        const next = parseCommandValue(EffectLayerSchema, {
+        const { colourInterpolation, ...layerChanges } = changes;
+        const candidate = {
           ...current,
-          ...changes,
-        });
+          ...layerChanges,
+          ...(current.kind === 'keyframe' && colourInterpolation !== undefined
+            ? {
+                tracks: {
+                  ...current.tracks,
+                  colour: {
+                    ...current.tracks.colour,
+                    interpolation: colourInterpolation,
+                  },
+                },
+              }
+            : {}),
+        };
+        const next = parseCommandValue(SceneLayerSchema, candidate);
         if (next.endBeat > scene.loopLengthBeats) {
           throw new EditorCommandError(
             'invalid-command',
-            'Effect layer must end within the scene loop.',
+            'Layer must end within the scene loop.',
           );
         }
         assertUniqueLayerName(scene, next.name, current.id);
@@ -965,31 +1273,87 @@ export function applyEditorCommand(
         return { ...scene, layers };
       });
     }
-    case 'effect-layer-duplicated': {
+    case 'scene-layer-duplicated': {
       return updateScene(project, command.sceneId, (scene) => {
         const index = layerIndex(scene, command.id);
         const source = scene.layers[index];
-        const duplicate = parseCommandValue(EffectLayerSchema, {
+        const expectedKeyframes =
+          source.kind === 'keyframe'
+            ? source.tracks.brightness.keyframes.length +
+              source.tracks.colour.keyframes.length
+            : 0;
+        if (command.keyframeIds.length !== expectedKeyframes) {
+          throw new EditorCommandError(
+            'invalid-command',
+            'Layer duplication requires one new ID per keyframe.',
+          );
+        }
+        const duplicateIds = new Set<string>();
+        const keyframeIds = command.keyframeIds.map((id) => {
+          const parsed = assertNewEntityId(project, id);
+          if (duplicateIds.has(parsed)) {
+            throw new EditorCommandError(
+              'duplicate-entity-id',
+              `Entity ID "${parsed}" is already in use.`,
+            );
+          }
+          duplicateIds.add(parsed);
+          return parsed;
+        });
+        const duplicateId = assertNewEntityId(project, command.newId);
+        if (duplicateIds.has(duplicateId)) {
+          throw new EditorCommandError(
+            'duplicate-entity-id',
+            `Entity ID "${duplicateId}" is already in use.`,
+          );
+        }
+        let duplicate: SceneLayer = {
           ...structuredClone(source),
-          id: assertNewEntityId(project, command.newId),
+          id: duplicateId,
           locked: false,
           name: uniqueName(
             scene.layers.map(({ name }) => name),
             `${source.name} Copy`,
           ),
-        });
+        };
+        if (duplicate.kind === 'keyframe') {
+          const brightnessCount = duplicate.tracks.brightness.keyframes.length;
+          duplicate = {
+            ...duplicate,
+            tracks: {
+              brightness: {
+                keyframes: duplicate.tracks.brightness.keyframes.map(
+                  (keyframe, keyframeIndex) => ({
+                    ...keyframe,
+                    id: keyframeIds[keyframeIndex],
+                  }),
+                ),
+              },
+              colour: {
+                ...duplicate.tracks.colour,
+                keyframes: duplicate.tracks.colour.keyframes.map(
+                  (keyframe, keyframeIndex) => ({
+                    ...keyframe,
+                    id: keyframeIds[brightnessCount + keyframeIndex],
+                  }),
+                ),
+              },
+            },
+          };
+        }
+        duplicate = parseCommandValue(SceneLayerSchema, duplicate);
         const layers = [...scene.layers];
         layers.splice(index + 1, 0, duplicate);
         return { ...scene, layers };
       });
     }
-    case 'effect-layer-deleted': {
+    case 'scene-layer-deleted': {
       return updateScene(project, command.sceneId, (scene) => {
         const index = layerIndex(scene, command.id);
         if (scene.layers[index].locked) {
           throw new EditorCommandError(
             'locked-entity',
-            `Effect layer "${scene.layers[index].name}" is locked.`,
+            `Layer "${scene.layers[index].name}" is locked.`,
           );
         }
         return {
@@ -998,19 +1362,19 @@ export function applyEditorCommand(
         };
       });
     }
-    case 'effect-layer-moved': {
+    case 'scene-layer-moved': {
       return updateScene(project, command.sceneId, (scene) => {
         const index = layerIndex(scene, command.id);
         if (scene.layers[index].locked) {
           throw new EditorCommandError(
             'locked-entity',
-            `Effect layer "${scene.layers[index].name}" is locked.`,
+            `Layer "${scene.layers[index].name}" is locked.`,
           );
         }
         if (!Number.isInteger(command.toIndex)) {
           throw new EditorCommandError(
             'invalid-command',
-            'Effect layer position must be an integer.',
+            'Layer position must be an integer.',
           );
         }
         const toIndex = Math.max(
@@ -1021,6 +1385,217 @@ export function applyEditorCommand(
         const layers = [...scene.layers];
         const [layer] = layers.splice(index, 1);
         layers.splice(toIndex, 0, layer);
+        return { ...scene, layers };
+      });
+    }
+    case 'keyframe-added': {
+      return updateScene(project, command.sceneId, (scene) => {
+        const layerPosition = layerIndex(scene, command.layerId);
+        const layer = scene.layers[layerPosition];
+        if (layer.kind !== 'keyframe') {
+          throw new EditorCommandError(
+            'invalid-command',
+            'Keyframes can only be added to a keyframe layer.',
+          );
+        }
+        if (layer.locked)
+          throw new EditorCommandError(
+            'locked-entity',
+            `Layer "${layer.name}" is locked.`,
+          );
+        if (command.beat > scene.loopLengthBeats) {
+          throw new EditorCommandError(
+            'invalid-command',
+            'Keyframe must be within the scene loop.',
+          );
+        }
+        const track = layer.tracks[command.value.track];
+        if (track.keyframes.some(({ beat }) => beat === command.beat)) {
+          throw new EditorCommandError(
+            'invalid-command',
+            'A keyframe already exists at this beat.',
+          );
+        }
+        const keyframe =
+          command.value.track === 'brightness'
+            ? parseCommandValue(BrightnessKeyframeSchema, {
+                beat: command.beat,
+                brightnessPercent: command.value.brightnessPercent,
+                id: assertNewEntityId(project, command.id),
+              })
+            : parseCommandValue(ColourKeyframeSchema, {
+                beat: command.beat,
+                id: assertNewEntityId(project, command.id),
+                paletteTokenId:
+                  project.palette[
+                    tokenIndex(project, command.value.paletteTokenId)
+                  ].id,
+              });
+        const nextLayer: KeyframeLayer = {
+          ...layer,
+          tracks: {
+            ...layer.tracks,
+            [command.value.track]: {
+              ...track,
+              keyframes: [...track.keyframes, keyframe].sort(
+                (left, right) => left.beat - right.beat,
+              ),
+            },
+          },
+        } as KeyframeLayer;
+        const layers = [...scene.layers];
+        layers[layerPosition] = parseCommandValue(
+          KeyframeLayerSchema,
+          nextLayer,
+        );
+        return { ...scene, layers };
+      });
+    }
+    case 'keyframe-updated': {
+      return updateScene(project, command.sceneId, (scene) => {
+        const layerPosition = layerIndex(scene, command.layerId);
+        const layer = scene.layers[layerPosition];
+        if (layer.kind !== 'keyframe')
+          throw new EditorCommandError(
+            'invalid-command',
+            'Keyframes can only be updated in a keyframe layer.',
+          );
+        if (layer.locked)
+          throw new EditorCommandError(
+            'locked-entity',
+            `Layer "${layer.name}" is locked.`,
+          );
+        const track = layer.tracks[command.track];
+        const keyframePosition = track.keyframes.findIndex(
+          ({ id }) => id === command.id,
+        );
+        if (keyframePosition < 0)
+          throw new EditorCommandError(
+            'missing-entity',
+            `Keyframe "${command.id}" does not exist.`,
+          );
+        const current = track.keyframes[keyframePosition];
+        const beat = command.changes.beat ?? current.beat;
+        if (beat > scene.loopLengthBeats)
+          throw new EditorCommandError(
+            'invalid-command',
+            'Keyframe must be within the scene loop.',
+          );
+        if (
+          track.keyframes.some(
+            (candidate) =>
+              candidate.id !== command.id && candidate.beat === beat,
+          )
+        )
+          throw new EditorCommandError(
+            'invalid-command',
+            'A keyframe already exists at this beat.',
+          );
+        const nextKeyframe =
+          command.track === 'brightness'
+            ? parseCommandValue(BrightnessKeyframeSchema, {
+                ...current,
+                beat,
+                brightnessPercent:
+                  command.changes.brightnessPercent ??
+                  ('brightnessPercent' in current
+                    ? current.brightnessPercent
+                    : undefined),
+              })
+            : parseCommandValue(ColourKeyframeSchema, {
+                ...current,
+                beat,
+                paletteTokenId:
+                  command.changes.paletteTokenId ??
+                  ('paletteTokenId' in current
+                    ? current.paletteTokenId
+                    : undefined),
+              });
+        if ('paletteTokenId' in nextKeyframe)
+          tokenIndex(project, nextKeyframe.paletteTokenId);
+        if (JSON.stringify(nextKeyframe) === JSON.stringify(current))
+          return scene;
+        const keyframes = [...track.keyframes];
+        keyframes[keyframePosition] = nextKeyframe as never;
+        keyframes.sort((left, right) => left.beat - right.beat);
+        const layers = [...scene.layers];
+        layers[layerPosition] = parseCommandValue(KeyframeLayerSchema, {
+          ...layer,
+          tracks: {
+            ...layer.tracks,
+            [command.track]: { ...track, keyframes },
+          },
+        });
+        return { ...scene, layers };
+      });
+    }
+    case 'keyframe-duplicated': {
+      const scene = project.scenes[sceneIndex(project, command.sceneId)];
+      const layer = scene.layers[layerIndex(scene, command.layerId)];
+      if (layer.kind !== 'keyframe')
+        throw new EditorCommandError(
+          'invalid-command',
+          'Keyframes can only be duplicated in a keyframe layer.',
+        );
+      const source = layer.tracks[command.track].keyframes.find(
+        ({ id }) => id === command.id,
+      );
+      if (!source)
+        throw new EditorCommandError(
+          'missing-entity',
+          `Keyframe "${command.id}" does not exist.`,
+        );
+      return applyEditorCommand(project, {
+        beat: command.newBeat,
+        id: command.newId,
+        layerId: command.layerId,
+        sceneId: command.sceneId,
+        type: 'keyframe-added',
+        value:
+          command.track === 'brightness'
+            ? {
+                brightnessPercent: (source as { brightnessPercent: number })
+                  .brightnessPercent,
+                track: 'brightness',
+              }
+            : {
+                paletteTokenId: (source as { paletteTokenId: string })
+                  .paletteTokenId,
+                track: 'colour',
+              },
+      });
+    }
+    case 'keyframe-deleted': {
+      return updateScene(project, command.sceneId, (scene) => {
+        const layerPosition = layerIndex(scene, command.layerId);
+        const layer = scene.layers[layerPosition];
+        if (layer.kind !== 'keyframe')
+          throw new EditorCommandError(
+            'invalid-command',
+            'Keyframes can only be deleted from a keyframe layer.',
+          );
+        if (layer.locked)
+          throw new EditorCommandError(
+            'locked-entity',
+            `Layer "${layer.name}" is locked.`,
+          );
+        const track = layer.tracks[command.track];
+        if (!track.keyframes.some(({ id }) => id === command.id))
+          throw new EditorCommandError(
+            'missing-entity',
+            `Keyframe "${command.id}" does not exist.`,
+          );
+        const layers = [...scene.layers];
+        layers[layerPosition] = parseCommandValue(KeyframeLayerSchema, {
+          ...layer,
+          tracks: {
+            ...layer.tracks,
+            [command.track]: {
+              ...track,
+              keyframes: track.keyframes.filter(({ id }) => id !== command.id),
+            },
+          },
+        });
         return { ...scene, layers };
       });
     }

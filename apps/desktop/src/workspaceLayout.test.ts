@@ -51,7 +51,7 @@ describe('workspace layout preferences', () => {
     ).toBe(420);
   });
 
-  it('grows the timeline with effect rows up to its maximum', () => {
+  it('grows the timeline with visible layer and property rows up to its maximum', () => {
     expect(timelineContentMinimumHeight(0)).toBe(184);
     expect(timelineContentMinimumHeight(1)).toBe(227);
     expect(timelineContentMinimumHeight(2)).toBe(270);
