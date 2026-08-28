@@ -9,6 +9,9 @@ import type {
   Scene,
 } from '@led-studio/project-format';
 import { useEffect, useState, type KeyboardEvent } from 'react';
+import { ChoiceMenu, type ChoiceMenuOption } from './ChoiceMenu';
+import { PaletteSwatches } from './PaletteSwatches';
+import { SegmentedControl } from './SegmentedControl';
 
 interface NumberDraftProps {
   disabled?: boolean;
@@ -106,6 +109,32 @@ export function LayerInspector({
   const [name, setName] = useState(layer.name);
   const index = scene.layers.findIndex(({ id }) => id === layer.id);
   const editingDisabled = layer.locked;
+  const selectedColour = palette.find(
+    ({ id }) => id === layer.effect.paletteTokenId,
+  );
+  const targetOptions: ChoiceMenuOption[] = [
+    {
+      disabled: selectedLedIds.length === 0 && layer.target.kind !== 'leds',
+      group: 'Selection',
+      label:
+        selectedLedIds.length > 0
+          ? `Selected LEDs (${selectedLedIds.length}, direct)`
+          : layer.target.kind === 'leds'
+            ? `Direct LEDs (${layer.target.ledIds.length})`
+            : 'Selected LEDs (direct)',
+      value: 'leds',
+    },
+    ...profile.groups.map((group) => ({
+      group: 'Profile groups',
+      label: group.name,
+      value: `profile-group:${group.id}`,
+    })),
+    ...groups.map((group) => ({
+      group: 'Project groups',
+      label: group.name,
+      value: `project-group:${group.id}`,
+    })),
+  ];
 
   useEffect(() => setName(layer.name), [layer.id, layer.name]);
 
@@ -147,14 +176,14 @@ export function LayerInspector({
           }}
         />
       </label>
-      <label className="inspector-field">
+      <div className="inspector-field">
         <span>Target</span>
-        <select
-          aria-label="Effect target"
+        <ChoiceMenu
+          ariaLabel="Effect target"
           disabled={editingDisabled}
+          options={targetOptions}
           value={targetValue(layer.target)}
-          onChange={(event) => {
-            const value = event.target.value;
+          onChange={(value) => {
             if (value === 'leds') {
               const ledIds =
                 selectedLedIds.length > 0
@@ -175,33 +204,8 @@ export function LayerInspector({
               },
             });
           }}
-        >
-          <option
-            value="leds"
-            disabled={
-              selectedLedIds.length === 0 && layer.target.kind !== 'leds'
-            }
-          >
-            Selected LEDs (direct)
-          </option>
-          <optgroup label="Profile groups">
-            {profile.groups.map((group) => (
-              <option key={group.id} value={`profile-group:${group.id}`}>
-                {group.name}
-              </option>
-            ))}
-          </optgroup>
-          {groups.length > 0 ? (
-            <optgroup label="Project groups">
-              {groups.map((group) => (
-                <option key={group.id} value={`project-group:${group.id}`}>
-                  {group.name}
-                </option>
-              ))}
-            </optgroup>
-          ) : null}
-        </select>
-      </label>
+        />
+      </div>
       <div className="inspector-field-grid">
         <NumberDraft
           disabled={editingDisabled}
@@ -222,23 +226,15 @@ export function LayerInspector({
           onCommit={(endBeat) => onUpdate({ endBeat })}
         />
       </div>
-      <label className="inspector-field">
-        <span>Colour</span>
-        <select
-          aria-label="Effect colour"
+      <div className="inspector-field">
+        <span>Colour · {selectedColour?.name ?? 'Unavailable'}</span>
+        <PaletteSwatches
           disabled={editingDisabled}
-          value={layer.effect.paletteTokenId}
-          onChange={(event) =>
-            updateEffect({ paletteTokenId: event.target.value })
-          }
-        >
-          {palette.map((token) => (
-            <option key={token.id} value={token.id}>
-              {token.name}
-            </option>
-          ))}
-        </select>
-      </label>
+          palette={palette}
+          selectedTokenId={layer.effect.paletteTokenId}
+          onSelect={(paletteTokenId) => updateEffect({ paletteTokenId })}
+        />
+      </div>
       {layer.effect.type === 'pulse' ? (
         <>
           <div className="inspector-field-grid">
@@ -285,23 +281,20 @@ export function LayerInspector({
               }
             />
           </div>
-          <label className="inspector-field">
+          <div className="inspector-field">
             <span>Waveform</span>
-            <select
+            <SegmentedControl
+              ariaLabel="Waveform"
               disabled={editingDisabled}
+              options={[
+                { label: 'Sine', value: 'sine' },
+                { label: 'Triangle', value: 'triangle' },
+                { label: 'Square', value: 'square' },
+              ]}
               value={layer.effect.waveform}
-              onChange={(event) =>
-                updateEffect({
-                  waveform: event.target.value as
-                    'sine' | 'triangle' | 'square',
-                })
-              }
-            >
-              <option value="sine">Sine</option>
-              <option value="triangle">Triangle</option>
-              <option value="square">Square</option>
-            </select>
-          </label>
+              onChange={(waveform) => updateEffect({ waveform })}
+            />
+          </div>
         </>
       ) : (
         <>
@@ -342,31 +335,38 @@ export function LayerInspector({
               onCommit={(trailLength) => updateEffect({ trailLength })}
             />
           </div>
-          <label className="inspector-field">
+          <div className="inspector-field">
             <span>Direction</span>
-            <select
+            <SegmentedControl
+              ariaLabel="Direction"
               disabled={editingDisabled}
+              options={[
+                { label: 'Forward', value: 'forward' },
+                { label: 'Reverse', value: 'reverse' },
+              ]}
               value={layer.effect.direction}
-              onChange={(event) =>
-                updateEffect({
-                  direction: event.target.value as 'forward' | 'reverse',
-                })
-              }
-            >
-              <option value="forward">Forward</option>
-              <option value="reverse">Reverse</option>
-            </select>
-          </label>
+              onChange={(direction) => updateEffect({ direction })}
+            />
+          </div>
         </>
       )}
-      <label className="layer-toggle">
-        <input
-          type="checkbox"
-          checked={layer.locked}
-          onChange={(event) => onUpdate({ locked: event.target.checked })}
-        />
-        Locked
-      </label>
+      <div className="layer-lock-control">
+        <label
+          className="layer-toggle"
+          title="Protect parameters, timing, targeting, ordering, and deletion"
+        >
+          <input
+            type="checkbox"
+            checked={layer.locked}
+            onChange={(event) => onUpdate({ locked: event.target.checked })}
+          />
+          Lock editing
+        </label>
+        <p className="inspector-help">
+          Protects this layer from parameter, timing, target, ordering, and
+          deletion changes. You can still enable, duplicate, or unlock it.
+        </p>
+      </div>
       <div className="inspector-actions layer-order-actions">
         <button
           type="button"
@@ -383,6 +383,9 @@ export function LayerInspector({
           Move down
         </button>
       </div>
+      <p className="inspector-help">
+        Timeline rows can also be dragged. Higher layers override lower layers.
+      </p>
       <div className="inspector-actions">
         <button type="button" onClick={onDuplicate}>
           Duplicate

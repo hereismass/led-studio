@@ -14,9 +14,9 @@ The desktop project-session controller combines that core history with file sour
 
 React owns application layout, controls, inspectors, and low-frequency state presentation. Presentational components receive state and commands from the project-session controller; they do not perform filesystem or lifecycle work directly. Active scene, selected LEDs, the source of an LED selection, inspector target, and panel dimensions are transient UI state and never enter project files.
 
-Text fields keep temporary drafts locally and dispatch one command when an edit is committed. Continuous sliders and native colour input preview live at most once per animation frame and share one history group. Workspace rendering is split into panel components and hooks for layout, selection, and preview lifecycle; the project-session hook remains the mutation boundary.
+Text fields keep temporary drafts locally and dispatch one command when an edit is committed. Continuous sliders and native colour input preview live at most once per animation frame and share one history group. Static LED states may retain a linked colour at zero brightness; only the explicit off command removes the sparse assignment. Workspace rendering is split into panel components and hooks for layout, selection, and preview lifecycle; the project-session hook remains the mutation boundary.
 
-Workspace panel sizes and collapsed state are versioned local application preferences. They are deliberately separate from project data so opening a project does not change the user's editor layout.
+Workspace panel sizes and collapsed state are versioned local application preferences. They are deliberately separate from project data so opening a project does not change the user's editor layout. The saved timeline height is a preferred floor; its effective height grows with the active scene's effect rows up to a fixed cap, after which one vertical viewport scrolls.
 
 No additional global state library is needed while a reducer and controller hook provide a clear state transition boundary.
 

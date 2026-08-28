@@ -112,12 +112,14 @@ export function ProjectWorkspace({
   );
   const {
     beginResize,
+    bottomPanelHeight,
+    bottomPanelMinimumHeight,
     layout,
     resetLayout,
     resizeWithKeyboard,
     togglePanel,
     workspaceStyle,
-  } = useWorkspaceLayout();
+  } = useWorkspaceLayout(activeScene?.layers.length ?? 0);
 
   function executeAndSelectCreated(
     command: EditorCommand,
@@ -525,12 +527,12 @@ export function ProjectWorkspace({
         <WorkspaceResizer
           collapsed={layout.bottomCollapsed}
           max={420}
-          min={150}
+          min={bottomPanelMinimumHeight}
           onKeyDown={resizeWithKeyboard}
           onPointerDown={beginResize}
           orientation="horizontal"
           panel="bottom"
-          value={layout.bottomHeight}
+          value={bottomPanelHeight}
         />
         <TimelinePanel
           collapsed={layout.bottomCollapsed}
@@ -542,6 +544,15 @@ export function ProjectWorkspace({
           }
           timing={project.timing}
           onAddLayer={addEffectLayer}
+          onMoveLayer={(id, toIndex) => {
+            if (!activeScene) return;
+            onExecuteCommand({
+              id,
+              sceneId: activeScene.id,
+              toIndex,
+              type: 'effect-layer-moved',
+            });
+          }}
           onSelectLayer={(id) => {
             if (activeScene)
               setInspectorTarget({

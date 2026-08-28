@@ -4,7 +4,8 @@ import type {
   ProjectTiming,
   Scene,
 } from '@led-studio/project-format';
-import { useRef, type KeyboardEvent, type PointerEvent } from 'react';
+import { useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
+import { ChoiceMenu } from './ChoiceMenu';
 import type { PreviewPlaybackController } from './previewPlayback';
 import { usePreviewPlaybackSnapshot } from './usePreviewPlaybackSnapshot';
 import { useRafGroupedInteraction } from './useRafGroupedInteraction';
@@ -16,6 +17,7 @@ interface SceneTimelineProps {
   selectedLayerId: string | null;
   timing: ProjectTiming;
   onAddLayer: (type: 'pulse' | 'chase') => void;
+  onMoveLayer: (id: string, toIndex: number) => void;
   onSelectLayer: (id: string) => void;
   onUpdateLayer: (
     id: string,
@@ -102,6 +104,12 @@ interface DragState {
   startClientX: number;
   width: number;
 }
+
+interface ReorderDragState {
+  dropSlot: number;
+  id: string;
+  startIndex: number;
+}
 function snap(value: number): number {
   return Math.round(value * 4) / 4;
 }
@@ -110,6 +118,7 @@ export function SceneTimeline({
   canAddEffect,
   controller,
   onAddLayer,
+  onMoveLayer,
   onSelectLayer,
   onUpdateLayer,
   scene,
@@ -117,6 +126,9 @@ export function SceneTimeline({
   timing,
 }: SceneTimelineProps) {
   const dragRef = useRef<DragState | null>(null);
+  const reorderRef = useRef<ReorderDragState | null>(null);
+  const [draggingLayerId, setDraggingLayerId] = useState<string | null>(null);
+  const [dropSlot, setDropSlot] = useState<number | null>(null);
   const interaction = useRafGroupedInteraction<{
     endBeat: number;
     id: string;
@@ -224,6 +236,77 @@ export function SceneTimeline({
     );
   }
 
+  function beginReorder(
+    event: PointerEvent<HTMLButtonElement>,
+    layer: EffectLayer,
+    startIndex: number,
+  ) {
+    if (layer.locked) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    onSelectLayer(layer.id);
+    reorderRef.current = {
+      dropSlot: startIndex,
+      id: layer.id,
+      startIndex,
+    };
+    setDraggingLayerId(layer.id);
+    setDropSlot(startIndex);
+  }
+
+  function moveReorder(event: PointerEvent<HTMLButtonElement>) {
+    const drag = reorderRef.current;
+    if (!drag) return;
+    const ruler = event.currentTarget.closest('.scene-ruler');
+    if (!(ruler instanceof HTMLElement)) return;
+    const rows = Array.from(
+      ruler.querySelectorAll<HTMLElement>('.scene-effect-row'),
+    );
+    const firstAfterPointer = rows.findIndex((row) => {
+      const bounds = row.getBoundingClientRect();
+      return event.clientY < bounds.top + bounds.height / 2;
+    });
+    const nextSlot = firstAfterPointer < 0 ? rows.length : firstAfterPointer;
+    drag.dropSlot = nextSlot;
+    setDropSlot(nextSlot);
+  }
+
+  function endReorder(commit: boolean) {
+    const drag = reorderRef.current;
+    if (!drag) return;
+    if (commit) {
+      const adjustedIndex =
+        drag.dropSlot > drag.startIndex ? drag.dropSlot - 1 : drag.dropSlot;
+      const toIndex = Math.max(
+        0,
+        Math.min(scene.layers.length - 1, adjustedIndex),
+      );
+      if (toIndex !== drag.startIndex) onMoveLayer(drag.id, toIndex);
+    }
+    reorderRef.current = null;
+    setDraggingLayerId(null);
+    setDropSlot(null);
+  }
+
+  function handleReorderKey(
+    event: KeyboardEvent<HTMLButtonElement>,
+    layer: EffectLayer,
+    index: number,
+  ) {
+    if (event.key === 'Escape' && reorderRef.current) {
+      event.preventDefault();
+      endReorder(false);
+      return;
+    }
+    if (layer.locked) return;
+    const offset =
+      event.key === 'ArrowUp' ? -1 : event.key === 'ArrowDown' ? 1 : 0;
+    if (offset === 0) return;
+    event.preventDefault();
+    onMoveLayer(layer.id, index + offset);
+  }
+
   return (
     <div className="scene-timeline">
       <div className="scene-timeline-summary">
@@ -236,21 +319,21 @@ export function SceneTimeline({
             {timing.timeSignature.denominator}
           </span>
         </div>
-        <select
+        <ChoiceMenu
           className="add-effect-control"
-          aria-label="Add effect"
+          ariaLabel="Add effect"
           disabled={!canAddEffect}
           title={canAddEffect ? undefined : 'Add a palette colour first'}
-          value=""
-          onChange={(event) => {
-            const type = event.target.value;
+          options={[
+            { label: 'Pulse', value: 'pulse' },
+            { label: 'Chase', value: 'chase' },
+          ]}
+          placeholder="＋ Add effect…"
+          value={null}
+          onChange={(type) => {
             if (type === 'pulse' || type === 'chase') onAddLayer(type);
           }}
-        >
-          <option value="">＋ Add effect…</option>
-          <option value="pulse">Pulse</option>
-          <option value="chase">Chase</option>
-        </select>
+        />
         <ScenePlaybackPosition
           controller={controller}
           loopLengthBeats={scene.loopLengthBeats}
@@ -289,17 +372,41 @@ export function SceneTimeline({
               <span>Base</span>
             </div>
           </div>
-          {scene.layers.map((layer) => (
-            <div className="scene-track-row" key={layer.id}>
-              <button
-                className="scene-track-label"
-                type="button"
-                aria-pressed={selectedLayerId === layer.id}
-                onClick={() => onSelectLayer(layer.id)}
-              >
-                {layer.locked ? '🔒 ' : ''}
-                {layer.name}
-              </button>
+          {scene.layers.map((layer, index) => (
+            <div
+              className={`scene-track-row scene-effect-row ${draggingLayerId === layer.id ? 'scene-effect-row-dragging' : ''}`}
+              key={layer.id}
+            >
+              <div className="scene-track-label scene-effect-track-label">
+                <button
+                  className="effect-reorder-handle"
+                  type="button"
+                  aria-label={`Reorder ${layer.name}`}
+                  disabled={layer.locked}
+                  title={
+                    layer.locked
+                      ? 'Unlock this layer to reorder it'
+                      : 'Drag vertically or use the arrow keys to reorder'
+                  }
+                  onKeyDown={(event) => handleReorderKey(event, layer, index)}
+                  onPointerDown={(event) => beginReorder(event, layer, index)}
+                  onPointerMove={moveReorder}
+                  onPointerUp={() => endReorder(true)}
+                  onPointerCancel={() => endReorder(false)}
+                >
+                  ⠿
+                </button>
+                <button
+                  className="scene-track-select"
+                  type="button"
+                  aria-label={layer.name}
+                  aria-pressed={selectedLayerId === layer.id}
+                  onClick={() => onSelectLayer(layer.id)}
+                >
+                  {layer.locked ? <span aria-hidden="true">🔒 </span> : null}
+                  {layer.name}
+                </button>
+              </div>
               <div
                 className={`effect-layer-bar effect-layer-${layer.effect.type} ${selectedLayerId === layer.id ? 'effect-layer-selected' : ''} ${!layer.enabled ? 'effect-layer-disabled' : ''}`}
                 style={{
@@ -345,6 +452,13 @@ export function SceneTimeline({
               </div>
             </div>
           ))}
+          {draggingLayerId !== null && dropSlot !== null ? (
+            <div
+              className="scene-layer-drop-indicator"
+              aria-hidden="true"
+              style={{ top: `${28 + (dropSlot + 1) * 43}px` }}
+            />
+          ) : null}
           <div className="scene-scrubber-layer">
             <SceneTimelineScrubber
               controller={controller}

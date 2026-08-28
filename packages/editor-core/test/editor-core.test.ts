@@ -158,10 +158,23 @@ describe('editor commands', () => {
     });
 
     project = applyEditorCommand(project, {
+      brightnessPercent: 0,
+      ledIds: ['fret-03-e-side'],
+      sceneId: SCENE_ID,
+      type: 'scene-led-brightness-set',
+    });
+    expect(project.scenes[0].ledStates['fret-03-e-side']).toEqual({
+      brightnessPercent: 0,
+      paletteTokenId: HOT_PINK_ID,
+    });
+    expectValid(project);
+
+    project = applyEditorCommand(project, {
       ledIds: ['fret-03-e-side'],
       sceneId: SCENE_ID,
       type: 'scene-leds-turned-off',
     });
+    expect(project.scenes[0].ledStates['fret-03-e-side']).toBeUndefined();
     project = applyEditorCommand(project, {
       id: SCENE_ID,
       type: 'scene-deleted',

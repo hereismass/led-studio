@@ -106,6 +106,7 @@ export function GroupInspector({
         </div>
       ) : (
         <button
+          className="inspector-secondary-button"
           type="button"
           onClick={() => {
             onSelectionChange(group.ledIds);

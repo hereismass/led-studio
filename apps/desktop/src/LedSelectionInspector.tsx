@@ -1,7 +1,8 @@
 import type { HardwareLed } from '@led-studio/hardware-profiles';
 import type { PaletteToken, Scene } from '@led-studio/project-format';
 import type { ExecuteEditorCommandOptions } from '@led-studio/editor-core';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
+import { PaletteSwatches } from './PaletteSwatches';
 import { useRafGroupedInteraction } from './useRafGroupedInteraction';
 
 interface LedSelectionInspectorProps {
@@ -24,14 +25,35 @@ export function LedSelectionInspector({
   palette,
   scene,
 }: LedSelectionInspectorProps) {
-  const litStates = leds.flatMap((led) =>
-    scene.ledStates[led.id] ? [scene.ledStates[led.id]] : [],
-  );
+  const states = leds.map((led) => scene.ledStates[led.id] ?? null);
+  const assignedStates = states.flatMap((state) => (state ? [state] : []));
+  const allAssigned = assignedStates.length === leds.length;
   const brightnesses = new Set(
-    litStates.map((state) => state.brightnessPercent),
+    assignedStates.map((state) => state.brightnessPercent),
   );
-  const brightness =
-    brightnesses.size === 1 ? (litStates[0]?.brightnessPercent ?? 100) : 100;
+  const mixedBrightness =
+    assignedStates.length > 0 && (!allAssigned || brightnesses.size > 1);
+  const brightness = mixedBrightness
+    ? Math.round(
+        assignedStates.reduce(
+          (total, state) => total + state.brightnessPercent,
+          0,
+        ) / assignedStates.length,
+      )
+    : (assignedStates[0]?.brightnessPercent ?? 0);
+  const paletteTokenIds = new Set(
+    assignedStates.map((state) => state.paletteTokenId),
+  );
+  const mixedColour =
+    assignedStates.length > 0 && (!allAssigned || paletteTokenIds.size > 1);
+  const selectedTokenId =
+    !mixedColour && assignedStates.length > 0
+      ? assignedStates[0].paletteTokenId
+      : null;
+  const selectedToken = palette.find(({ id }) => id === selectedTokenId);
+  const hasLitState = assignedStates.some(
+    ({ brightnessPercent }) => brightnessPercent > 0,
+  );
   const [draft, setDraft] = useState(brightness);
   const brightnessInteraction = useRafGroupedInteraction(
     (value: number, options) => onBrightnessChange(value, options),
@@ -39,8 +61,13 @@ export function LedSelectionInspector({
 
   useEffect(
     () => setDraft(brightness),
-    [brightness, leds.map((led) => led.id).join('|')],
+    [brightness, leds.map((led) => led.id).join('|'), mixedBrightness],
   );
+
+  const brightnessStyle = {
+    '--range-accent': selectedToken?.value ?? '#8F8798',
+    '--range-fill': `${draft}%`,
+  } as CSSProperties;
 
   return (
     <section className="inspector-section led-inspector">
@@ -58,36 +85,41 @@ export function LedSelectionInspector({
         </p>
       </div>
       <div className="inspector-field">
-        <span>Apply palette colour</span>
-        <div className="inspector-swatches">
-          {palette.map((token) => (
-            <button
-              key={token.id}
-              type="button"
-              aria-label={`Apply ${token.name}`}
-              title={`${token.name} · ${token.value}`}
-              style={{ backgroundColor: token.value }}
-              onClick={() => onPaint(token.id)}
-            />
-          ))}
-        </div>
+        <span>
+          Palette colour ·{' '}
+          {mixedColour
+            ? 'Mixed'
+            : (selectedToken?.name ??
+              (assignedStates.length === 0 ? 'Off' : 'Unavailable'))}
+        </span>
+        <PaletteSwatches
+          mixed={mixedColour}
+          palette={palette}
+          selectedTokenId={selectedTokenId}
+          onSelect={onPaint}
+        />
       </div>
       <label className="inspector-field">
         <span>
           Brightness{' '}
-          {brightnesses.size > 1
+          {mixedBrightness
             ? '· Mixed'
-            : litStates.length
+            : assignedStates.length
               ? `· ${draft}%`
               : '· Off'}
         </span>
         <input
+          className={`selection-brightness ${mixedBrightness ? 'selection-brightness-mixed' : ''}`}
           aria-label="Selection brightness"
+          aria-valuetext={
+            mixedBrightness ? `Mixed, average ${draft}%` : `${draft}%`
+          }
           type="range"
           min="0"
           max="100"
           value={draft}
-          disabled={litStates.length === 0}
+          disabled={assignedStates.length === 0}
+          style={brightnessStyle}
           onBlur={brightnessInteraction.end}
           onChange={(event) => {
             const value = Number(event.target.value);
@@ -132,6 +164,7 @@ export function LedSelectionInspector({
       <button
         className="inspector-off-button"
         type="button"
+        disabled={!hasLitState}
         onClick={onTurnOff}
       >
         Turn selected LEDs off

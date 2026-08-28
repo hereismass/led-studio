@@ -124,7 +124,12 @@ export function AssetsPanel({
                       <strong>{scene.name}</strong>
                       <small>
                         {scene.loopLengthBeats} beats ·{' '}
-                        {Object.keys(scene.ledStates).length} lit
+                        {
+                          Object.values(scene.ledStates).filter(
+                            ({ brightnessPercent }) => brightnessPercent > 0,
+                          ).length
+                        }{' '}
+                        lit
                       </small>
                     </span>
                   </button>

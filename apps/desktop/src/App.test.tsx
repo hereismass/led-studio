@@ -293,16 +293,46 @@ describe('App project launcher and lifecycle', () => {
     expect(
       screen.getByRole('heading', { name: '10 LEDs selected' }),
     ).toBeInTheDocument();
+    expect(screen.getByText('Palette colour · Mixed')).toBeInTheDocument();
+    expect(
+      screen
+        .getAllByRole('button', { pressed: false })
+        .filter((button) =>
+          ['Hot Pink', 'Electric Green'].includes(
+            button.getAttribute('aria-label') ?? '',
+          ),
+        ),
+    ).toHaveLength(2);
 
-    await user.click(screen.getByRole('button', { name: 'Apply Hot Pink' }));
+    const hotPink = screen.getByRole('button', { name: 'Hot Pink' });
+    expect(hotPink).toHaveAttribute('aria-pressed', 'false');
+    await user.click(hotPink);
+    expect(hotPink).toHaveAttribute('aria-pressed', 'true');
     expect(
       screen.getByRole('button', {
         name: /Fret 21 G-side LED, address 0, #FF2B9A at 100%/i,
       }),
     ).toBeInTheDocument();
-    await user.click(
-      screen.getByRole('button', { name: 'Turn selected LEDs off' }),
-    );
+    const brightness = screen.getByRole('slider', {
+      name: 'Selection brightness',
+    });
+    const turnOff = screen.getByRole('button', {
+      name: 'Turn selected LEDs off',
+    });
+    fireEvent.change(brightness, { target: { value: '0' } });
+    fireEvent.blur(brightness);
+    expect(brightness).toBeEnabled();
+    expect(brightness).toHaveValue('0');
+    expect(turnOff).toBeDisabled();
+    expect(hotPink).toHaveAttribute('aria-pressed', 'true');
+    expect(
+      screen.getByRole('option', { name: /Marker Glow.*0 lit/i }),
+    ).toBeInTheDocument();
+
+    fireEvent.change(brightness, { target: { value: '50' } });
+    fireEvent.blur(brightness);
+    expect(turnOff).toBeEnabled();
+    await user.click(turnOff);
     expect(
       screen.getByRole('button', {
         name: /Fret 21 G-side LED, address 0, off/i,
@@ -325,9 +355,11 @@ describe('App project launcher and lifecycle', () => {
     expect(
       screen.getByRole('button', { name: /New Group.*5/i }),
     ).toBeInTheDocument();
-    await user.click(
-      screen.getByRole('button', { name: 'Edit members on fretboard' }),
-    );
+    const editMembers = screen.getByRole('button', {
+      name: 'Edit members on fretboard',
+    });
+    expect(editMembers).toHaveClass('inspector-secondary-button');
+    await user.click(editMembers);
     await user.click(
       screen.getByRole('button', { name: /Fret 21 G-side LED/i }),
     );
@@ -336,20 +368,30 @@ describe('App project launcher and lifecycle', () => {
       screen.getByRole('option', { name: /New Group.*1 LEDs/i }),
     ).toBeInTheDocument();
 
-    await user.selectOptions(
-      screen.getByRole('combobox', { name: 'Add effect' }),
-      'pulse',
-    );
+    await user.click(screen.getByRole('button', { name: 'Add effect' }));
+    await user.click(screen.getByRole('option', { name: 'Pulse' }));
+    expect(screen.getByRole('main')).toHaveStyle({
+      '--bottom-panel-height': '227px',
+    });
     expect(
       screen.getByRole('button', { name: 'Pulse, 0 to 4 beats' }),
     ).toBeInTheDocument();
     expect(
-      (
-        screen.getByRole('combobox', {
-          name: 'Effect target',
-        }) as HTMLSelectElement
-      ).value,
-    ).toMatch(/^project-group:/);
+      screen.getByRole('button', { name: 'Effect target' }),
+    ).toHaveTextContent('New Group');
+    expect(screen.getByRole('button', { name: 'White' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.getByRole('radio', { name: 'Sine' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
+    await user.click(screen.getByRole('radio', { name: 'Triangle' }));
+    expect(screen.getByRole('radio', { name: 'Triangle' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
 
     fireEvent.keyDown(
       screen.getByRole('button', { name: 'Resize start of Pulse' }),
@@ -363,11 +405,73 @@ describe('App project launcher and lifecycle', () => {
       0,
     );
 
-    await user.click(screen.getByRole('checkbox', { name: 'Locked' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Lock editing' }));
     expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled();
     expect(
       screen.getByRole('button', { name: 'Resize start of Pulse' }),
     ).toBeDisabled();
+    expect(
+      screen.getByText(/Protects this layer from parameter/),
+    ).toBeVisible();
+  });
+
+  it('reorders effect rows by drag and keeps keyboard ordering available', async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await user.click(
+      screen.getByRole('button', { name: /KMS 4-String Bass Example/i }),
+    );
+
+    const timeline = screen.getByRole('tabpanel', { name: 'Scene timeline' });
+    const rowNames = () =>
+      Array.from(timeline.querySelectorAll('.scene-track-select')).map(
+        (element) => element.textContent?.trim(),
+      );
+    expect(rowNames()).toEqual(['Upper Marker Pulse', 'E-side Chase']);
+    expect(screen.getByRole('main')).toHaveStyle({
+      '--bottom-panel-height': '270px',
+    });
+
+    const rows = timeline.querySelectorAll<HTMLElement>('.scene-effect-row');
+    vi.spyOn(rows[0], 'getBoundingClientRect').mockReturnValue({
+      bottom: 143,
+      height: 43,
+      left: 0,
+      right: 600,
+      top: 100,
+      width: 600,
+      x: 0,
+      y: 100,
+      toJSON: () => ({}),
+    });
+    vi.spyOn(rows[1], 'getBoundingClientRect').mockReturnValue({
+      bottom: 186,
+      height: 43,
+      left: 0,
+      right: 600,
+      top: 143,
+      width: 600,
+      x: 0,
+      y: 143,
+      toJSON: () => ({}),
+    });
+    const pulseHandle = screen.getByRole('button', {
+      name: 'Reorder Upper Marker Pulse',
+    });
+    pulseHandle.setPointerCapture = vi.fn();
+    fireEvent.pointerDown(pulseHandle, { clientY: 110, pointerId: 1 });
+    fireEvent.pointerMove(pulseHandle, { clientY: 200, pointerId: 1 });
+    expect(
+      timeline.querySelector('.scene-layer-drop-indicator'),
+    ).toBeInTheDocument();
+    fireEvent.pointerUp(pulseHandle, { clientY: 200, pointerId: 1 });
+    expect(rowNames()).toEqual(['E-side Chase', 'Upper Marker Pulse']);
+
+    fireEvent.keyDown(
+      screen.getByRole('button', { name: 'Reorder Upper Marker Pulse' }),
+      { key: 'ArrowUp' },
+    );
+    expect(rowNames()).toEqual(['Upper Marker Pulse', 'E-side Chase']);
   });
 
   it('edits project-wide preview timing', async () => {

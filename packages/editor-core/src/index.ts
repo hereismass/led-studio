@@ -786,24 +786,21 @@ export function applyEditorCommand(
         const affected = command.ledIds.filter(
           (ledId) => scene.ledStates[ledId],
         );
-        const unchanged = affected.every((ledId) =>
-          command.brightnessPercent === 0
-            ? false
-            : scene.ledStates[ledId].brightnessPercent ===
-              command.brightnessPercent,
+        const unchanged = affected.every(
+          (ledId) =>
+            scene.ledStates[ledId].brightnessPercent ===
+            command.brightnessPercent,
         );
         if (affected.length === 0 || unchanged) return scene;
         const ledStates = { ...scene.ledStates };
         affected.forEach((ledId) => {
-          if (command.brightnessPercent === 0) delete ledStates[ledId];
-          else
-            ledStates[ledId] = {
-              ...ledStates[ledId],
-              brightnessPercent: parseCommandValue(
-                SceneBrightnessPercentSchema,
-                command.brightnessPercent,
-              ),
-            };
+          ledStates[ledId] = {
+            ...ledStates[ledId],
+            brightnessPercent: parseCommandValue(
+              SceneBrightnessPercentSchema,
+              command.brightnessPercent,
+            ),
+          };
         });
         return { ...scene, ledStates };
       });

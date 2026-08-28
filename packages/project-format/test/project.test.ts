@@ -141,7 +141,7 @@ describe('ProjectSchema', () => {
       id: '6c21dc04-9a75-4f10-a7bb-9f17dc2fe32a',
       ledStates: {
         'fret-03-e-side': {
-          brightnessPercent: 75,
+          brightnessPercent: 0,
           paletteTokenId: HOT_PINK_ID,
         },
       },
@@ -151,6 +151,22 @@ describe('ProjectSchema', () => {
     expect(parseProject({ ...validProject, scenes: [scene] }).scenes).toEqual([
       { ...scene, layers: [] },
     ]);
+    expect(
+      ProjectSchema.safeParse({
+        ...validProject,
+        scenes: [
+          {
+            ...scene,
+            ledStates: {
+              'fret-03-e-side': {
+                brightnessPercent: -1,
+                paletteTokenId: HOT_PINK_ID,
+              },
+            },
+          },
+        ],
+      }).success,
+    ).toBe(false);
     expect(
       ProjectSchema.safeParse({
         ...validProject,

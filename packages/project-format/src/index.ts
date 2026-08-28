@@ -61,7 +61,7 @@ export const DEFAULT_PROJECT_TIMING = {
   timeSignature: { denominator: 4, numerator: 4 },
 } as const;
 
-export const SceneBrightnessPercentSchema = z.number().int().min(1).max(100);
+export const SceneBrightnessPercentSchema = z.number().int().min(0).max(100);
 
 export const SceneLedStateSchema = z
   .object({

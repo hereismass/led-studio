@@ -15,6 +15,7 @@ interface TimelinePanelProps {
   timing: ProjectTiming;
   selectedLayerId: string | null;
   onAddLayer: (type: 'pulse' | 'chase') => void;
+  onMoveLayer: (id: string, toIndex: number) => void;
   onSelectLayer: (id: string) => void;
   onUpdateLayer: (
     id: string,
@@ -33,6 +34,7 @@ export function TimelinePanel({
   selectedLayerId,
   timing,
   onAddLayer,
+  onMoveLayer,
   onSelectLayer,
   onUpdateLayer,
 }: TimelinePanelProps) {
@@ -67,6 +69,7 @@ export function TimelinePanel({
               selectedLayerId={selectedLayerId}
               timing={timing}
               onAddLayer={onAddLayer}
+              onMoveLayer={onMoveLayer}
               onSelectLayer={onSelectLayer}
               onUpdateLayer={onUpdateLayer}
             />

@@ -24,8 +24,30 @@ const layoutBounds = {
   rightWidth: { maximum: 420, minimum: 220 },
 } as const;
 
+const TIMELINE_BASE_CONTENT_HEIGHT = 184;
+const TIMELINE_LAYER_ROW_HEIGHT = 43;
+
 function clamp(value: number, minimum: number, maximum: number): number {
   return Math.min(Math.max(value, minimum), maximum);
+}
+
+export function timelineContentMinimumHeight(layerCount: number): number {
+  return clamp(
+    TIMELINE_BASE_CONTENT_HEIGHT +
+      Math.max(0, Math.floor(layerCount)) * TIMELINE_LAYER_ROW_HEIGHT,
+    layoutBounds.bottomHeight.minimum,
+    layoutBounds.bottomHeight.maximum,
+  );
+}
+
+export function effectiveBottomPanelHeight(
+  layout: WorkspaceLayoutPreferences,
+  layerCount: number,
+): number {
+  return Math.max(
+    layout.bottomHeight,
+    timelineContentMinimumHeight(layerCount),
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -112,12 +134,17 @@ export function resizeWorkspacePanel(
   layout: WorkspaceLayoutPreferences,
   panel: 'bottom' | 'left' | 'right',
   delta: number,
+  bottomContentMinimum: number = layoutBounds.bottomHeight.minimum,
 ): WorkspaceLayoutPreferences {
   if (panel === 'bottom') {
+    const resizeBase =
+      delta < 0
+        ? Math.max(layout.bottomHeight, bottomContentMinimum)
+        : layout.bottomHeight;
     return {
       ...layout,
       bottomHeight: readDimension(
-        layout.bottomHeight - delta,
+        resizeBase - delta,
         defaultWorkspaceLayout.bottomHeight,
         layoutBounds.bottomHeight,
       ),

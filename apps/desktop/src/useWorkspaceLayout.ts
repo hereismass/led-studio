@@ -8,16 +8,24 @@ import {
 } from 'react';
 import {
   defaultWorkspaceLayout,
+  effectiveBottomPanelHeight,
   loadWorkspaceLayout,
   resizeWorkspacePanel,
   saveWorkspaceLayout,
+  timelineContentMinimumHeight,
 } from './workspaceLayout';
 
 export type ResizablePanel = 'bottom' | 'left' | 'right';
 
-export function useWorkspaceLayout() {
+export function useWorkspaceLayout(timelineLayerCount: number) {
   const [layout, setLayout] = useState(loadWorkspaceLayout);
   const stopResizeRef = useRef<(() => void) | null>(null);
+  const bottomPanelMinimumHeight =
+    timelineContentMinimumHeight(timelineLayerCount);
+  const bottomPanelHeight = effectiveBottomPanelHeight(
+    layout,
+    timelineLayerCount,
+  );
 
   useEffect(() => saveWorkspaceLayout(layout), [layout]);
   useEffect(() => () => stopResizeRef.current?.(), []);
@@ -43,7 +51,14 @@ export function useWorkspaceLayout() {
       const totalDelta = position - startPosition;
       const nextDelta = totalDelta - previousDelta;
       previousDelta = totalDelta;
-      setLayout((current) => resizeWorkspacePanel(current, panel, nextDelta));
+      setLayout((current) =>
+        resizeWorkspacePanel(
+          current,
+          panel,
+          nextDelta,
+          bottomPanelMinimumHeight,
+        ),
+      );
     }
     function stopResizing() {
       window.removeEventListener('pointermove', handlePointerMove);
@@ -70,17 +85,21 @@ export function useWorkspaceLayout() {
     }
     if (delta === null) return;
     event.preventDefault();
-    setLayout((current) => resizeWorkspacePanel(current, panel, delta));
+    setLayout((current) =>
+      resizeWorkspacePanel(current, panel, delta, bottomPanelMinimumHeight),
+    );
   }
 
   const workspaceStyle = {
-    '--bottom-panel-height': `${layout.bottomCollapsed ? 38 : layout.bottomHeight}px`,
+    '--bottom-panel-height': `${layout.bottomCollapsed ? 38 : bottomPanelHeight}px`,
     '--left-panel-width': `${layout.leftCollapsed ? 44 : layout.leftWidth}px`,
     '--right-panel-width': `${layout.rightCollapsed ? 44 : layout.rightWidth}px`,
   } as CSSProperties;
 
   return {
     beginResize,
+    bottomPanelHeight,
+    bottomPanelMinimumHeight,
     layout,
     resetLayout: () => setLayout({ ...defaultWorkspaceLayout }),
     resizeWithKeyboard,

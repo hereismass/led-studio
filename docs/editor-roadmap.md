@@ -92,6 +92,17 @@ Implementation complete; the layer, targeting, and timeline review gate is open 
 - Layer bars support quarter-beat drag, resize, keyboard adjustment, exact inspector values, ordering, locking, and grouped undo.
 - Review gate: layer model, targeting, ordering, and whether the timeline remains understandable.
 
+### 5.1. Timeline and inspector polish
+
+Implementation complete.
+
+- Remove redundant timeline scrolling and grow the panel with effect rows until its maximum height.
+- Retain linked palette colours at zero static brightness while keeping explicit off as removal.
+- Share active and mixed palette swatches between LED and effect inspectors.
+- Replace effect selects with purpose-built target, waveform, direction, and colour controls.
+- Clarify layer locking and normalize inspector spacing and secondary actions.
+- Add pointer and keyboard effect-row reordering while preserving horizontal timing edits.
+
 ### 6. Keyframes and hybrid animation
 
 - Add keyframe layers to the same scene-layer model.

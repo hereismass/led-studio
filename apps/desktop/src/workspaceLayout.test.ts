@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   defaultWorkspaceLayout,
+  effectiveBottomPanelHeight,
   loadWorkspaceLayout,
   normalizeWorkspaceLayout,
   resizeWorkspacePanel,
   saveWorkspaceLayout,
+  timelineContentMinimumHeight,
   WORKSPACE_LAYOUT_STORAGE_KEY,
 } from './workspaceLayout';
 
@@ -47,6 +49,19 @@ describe('workspace layout preferences', () => {
       resizeWorkspacePanel(defaultWorkspaceLayout, 'bottom', -1_000)
         .bottomHeight,
     ).toBe(420);
+  });
+
+  it('grows the timeline with effect rows up to its maximum', () => {
+    expect(timelineContentMinimumHeight(0)).toBe(184);
+    expect(timelineContentMinimumHeight(1)).toBe(227);
+    expect(timelineContentMinimumHeight(2)).toBe(270);
+    expect(timelineContentMinimumHeight(100)).toBe(420);
+    expect(effectiveBottomPanelHeight(defaultWorkspaceLayout, 0)).toBe(220);
+    expect(effectiveBottomPanelHeight(defaultWorkspaceLayout, 2)).toBe(270);
+    expect(
+      resizeWorkspacePanel(defaultWorkspaceLayout, 'bottom', -8, 270)
+        .bottomHeight,
+    ).toBe(278);
   });
 
   it('stores preferences under the versioned app key', () => {

@@ -87,6 +87,28 @@ describe('scene evaluation', () => {
     expect(evaluator.getFrame(3.99)).toBe(evaluator.frame);
   });
 
+  it('keeps the linked colour while a static LED is at zero brightness', () => {
+    const frame = evaluateSceneFrame(
+      {
+        ...scene,
+        ledStates: {
+          'fret-21-g-side': {
+            brightnessPercent: 0,
+            paletteTokenId: WHITE_ID,
+          },
+        },
+      },
+      palette,
+      kmsFourString10LedProfile,
+      0,
+    );
+
+    expect(frame[0]).toMatchObject({
+      brightnessPercent: 0,
+      colour: '#FFFFFF',
+    });
+  });
+
   it('rejects unknown LED and palette references', () => {
     expect(() =>
       evaluateSceneFrame(
