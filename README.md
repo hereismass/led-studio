@@ -50,12 +50,19 @@ pnpm typecheck
 pnpm build:web
 pnpm check:rust
 pnpm format:check
+pnpm lint
 ```
 
 Run all non-bundling checks together with:
 
 ```sh
 pnpm check
+```
+
+For repeatable microbenchmarks of the large editor-command and playback paths:
+
+```sh
+pnpm benchmark
 ```
 
 To produce a native application bundle:
@@ -71,6 +78,8 @@ Version 2 contains a schema version, required project name, opaque hardware-prof
 Hardware profiles describe LED numbering and physical layout separately; the project format does not embed instrument-specific geometry.
 
 Project files are JSON documents validated at runtime with Zod and use the `.ledstudio` extension. See [`examples/kms-4-string-10-led-v1.ledstudio`](examples/kms-4-string-10-led-v1.ledstudio).
+
+To keep editing and playback responsive when opening untrusted local files, v2 currently caps projects at 32 MiB, 4,096 loop beats, 256 palette tokens, groups, and scenes, 512 layers per scene, 4,096 keys per track, and 50,000 total project entities. These are generous development safeguards rather than a frozen compatibility policy.
 
 ## Deliberately out of scope
 

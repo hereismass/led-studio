@@ -23,6 +23,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type KeyboardEvent,
   type PointerEvent,
 } from 'react';
@@ -33,8 +34,16 @@ import {
 } from './keyframeTimelineVisuals';
 import { PaletteSwatches } from './PaletteSwatches';
 import type { PreviewPlaybackController } from './previewPlayback';
-import { usePreviewPlaybackSnapshot } from './usePreviewPlaybackSnapshot';
+import {
+  usePreviewPlaybackQuarterBeat,
+  usePreviewPlaybackSnapshot,
+} from './usePreviewPlaybackSnapshot';
 import { useRafGroupedInteraction } from './useRafGroupedInteraction';
+import {
+  calculateVisibleTimelineLabels,
+  TIMELINE_PIXELS_PER_BEAT,
+  useTimelineViewport,
+} from './timelineViewport';
 
 interface SceneTimelineProps {
   canAddEffect: boolean;
@@ -151,6 +160,7 @@ interface DragState {
 interface ReorderDragState {
   dropSlot: number;
   id: string;
+  rowMidpoints: number[];
   startIndex: number;
 }
 function snap(value: number): number {
@@ -277,8 +287,10 @@ function KeyframeTrackRows({
     options?: ExecuteEditorCommandOptions,
   ) => void;
 }) {
-  const playback = usePreviewPlaybackSnapshot(controller);
-  const playheadBeat = Math.min(loopLengthBeats, snap(playback.positionBeats));
+  const playheadBeat = Math.min(
+    loopLengthBeats,
+    usePreviewPlaybackQuarterBeat(controller),
+  );
   const playheadInWindow =
     playheadBeat >= layer.startBeat && playheadBeat <= layer.endBeat;
   const [choosingColour, setChoosingColour] = useState(false);
@@ -566,6 +578,8 @@ export function SceneTimeline({
 }: SceneTimelineProps) {
   const dragRef = useRef<DragState | null>(null);
   const reorderRef = useRef<ReorderDragState | null>(null);
+  const rulerRef = useRef<HTMLDivElement | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
   const [draggingLayerId, setDraggingLayerId] = useState<string | null>(null);
   const [dropSlot, setDropSlot] = useState<number | null>(null);
   const interaction = useRafGroupedInteraction<{
@@ -580,8 +594,21 @@ export function SceneTimeline({
     ),
   );
   const subdivisions = Math.ceil(scene.loopLengthBeats * 4);
-  const minimumWidth = Math.max(480, scene.loopLengthBeats * 80);
+  const minimumWidth = Math.max(
+    480,
+    scene.loopLengthBeats * TIMELINE_PIXELS_PER_BEAT,
+  );
   const barCount = scene.loopLengthBeats / timing.timeSignature.numerator;
+  const viewport = useTimelineViewport(scrollRef, rulerRef);
+  const visibleLabels = useMemo(
+    () =>
+      calculateVisibleTimelineLabels(
+        scene.loopLengthBeats,
+        timing.timeSignature.numerator,
+        viewport,
+      ),
+    [scene.loopLengthBeats, timing.timeSignature.numerator, viewport],
+  );
 
   function dropIndicatorTop(slot: number): number {
     const rowsBeforeSlot = scene.layers
@@ -701,9 +728,21 @@ export function SceneTimeline({
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
     onSelectLayer(layer.id);
+    const ruler = event.currentTarget.closest('.scene-ruler');
+    const rowMidpoints =
+      ruler instanceof HTMLElement
+        ? Array.from(
+            ruler.querySelectorAll<HTMLElement>('.scene-effect-row'),
+            (row) => {
+              const bounds = row.getBoundingClientRect();
+              return bounds.top + bounds.height / 2;
+            },
+          )
+        : [];
     reorderRef.current = {
       dropSlot: startIndex,
       id: layer.id,
+      rowMidpoints,
       startIndex,
     };
     setDraggingLayerId(layer.id);
@@ -713,16 +752,12 @@ export function SceneTimeline({
   function moveReorder(event: PointerEvent<HTMLButtonElement>) {
     const drag = reorderRef.current;
     if (!drag) return;
-    const ruler = event.currentTarget.closest('.scene-ruler');
-    if (!(ruler instanceof HTMLElement)) return;
-    const rows = Array.from(
-      ruler.querySelectorAll<HTMLElement>('.scene-effect-row'),
+    const firstAfterPointer = drag.rowMidpoints.findIndex(
+      (midpoint) => event.clientY < midpoint,
     );
-    const firstAfterPointer = rows.findIndex((row) => {
-      const bounds = row.getBoundingClientRect();
-      return event.clientY < bounds.top + bounds.height / 2;
-    });
-    const nextSlot = firstAfterPointer < 0 ? rows.length : firstAfterPointer;
+    const nextSlot =
+      firstAfterPointer < 0 ? drag.rowMidpoints.length : firstAfterPointer;
+    if (nextSlot === drag.dropSlot) return;
     drag.dropSlot = nextSlot;
     setDropSlot(nextSlot);
   }
@@ -802,39 +837,39 @@ export function SceneTimeline({
           loopLengthBeats={scene.loopLengthBeats}
         />
       </div>
-      <div className="scene-ruler-scroll">
+      <div className="scene-ruler-scroll" ref={scrollRef}>
         <div
           className="scene-ruler"
-          style={{ minWidth: minimumWidth, width: '100%' }}
+          ref={rulerRef}
+          style={
+            {
+              '--timeline-bar-width': `${(timing.timeSignature.numerator / scene.loopLengthBeats) * 100}%`,
+              '--timeline-beat-width': `${100 / scene.loopLengthBeats}%`,
+              '--timeline-quarter-width': `${100 / subdivisions}%`,
+              minWidth: minimumWidth,
+              width: '100%',
+            } as CSSProperties
+          }
         >
           <div className="scene-tick-grid" aria-hidden="true">
-            {Array.from({ length: subdivisions + 1 }, (_, index) => {
-              const beat = index / 4;
-              const isBeat = index % 4 === 0;
-              const isBar =
-                isBeat && beat % timing.timeSignature.numerator === 0;
-              return (
-                <div
-                  className={`scene-ruler-tick ${isBar ? 'scene-ruler-bar' : isBeat ? 'scene-ruler-beat' : ''}`}
-                  key={index}
-                  style={{ left: `${(beat / scene.loopLengthBeats) * 100}%` }}
-                >
-                  {isBeat ? (
-                    <span>
-                      {beat === scene.loopLengthBeats ? (
-                        'End'
-                      ) : (
-                        <>
-                          {Math.floor(beat / timing.timeSignature.numerator) +
-                            1}
-                          .{(beat % timing.timeSignature.numerator) + 1}
-                        </>
-                      )}
-                    </span>
-                  ) : null}
-                </div>
-              );
-            })}
+            {visibleLabels.map(({ beat, isBar, isEnd }) => (
+              <div
+                className={`scene-ruler-tick scene-ruler-beat ${isBar ? 'scene-ruler-bar' : ''}`}
+                key={beat}
+                style={{ left: `${(beat / scene.loopLengthBeats) * 100}%` }}
+              >
+                <span>
+                  {isEnd ? (
+                    'End'
+                  ) : (
+                    <>
+                      {Math.floor(beat / timing.timeSignature.numerator) + 1}.
+                      {(beat % timing.timeSignature.numerator) + 1}
+                    </>
+                  )}
+                </span>
+              </div>
+            ))}
           </div>
           <div className="scene-track-row scene-static-row">
             <span className="scene-track-label">Static LED frame</span>

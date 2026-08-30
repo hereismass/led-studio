@@ -55,6 +55,7 @@ function createProjectStorage(
 ): ProjectStorageGateway {
   return {
     openProject: vi.fn().mockResolvedValue(null),
+    releaseProject: vi.fn().mockResolvedValue(undefined),
     saveProject: vi.fn().mockResolvedValue(undefined),
     saveProjectAs: vi.fn().mockResolvedValue(null),
     ...overrides,
@@ -847,6 +848,10 @@ describe('App project launcher and lifecycle', () => {
       copiedFile,
       expect.any(String),
     );
+    expect(projectStorage.releaseProject).toHaveBeenCalledWith({
+      fileName: 'loaded-project.ledstudio',
+      handle: 'project-file-1',
+    });
   });
 
   it('prevents overlapping save shortcuts synchronously', async () => {
@@ -949,6 +954,10 @@ describe('App project launcher and lifecycle', () => {
     );
 
     expect(unsavedChanges.confirmUnsavedChanges).not.toHaveBeenCalled();
+    expect(projectStorage.releaseProject).toHaveBeenCalledWith({
+      fileName: 'loaded-project.ledstudio',
+      handle: 'project-file-1',
+    });
     expect(
       screen.getByRole('button', { name: /new project/i }),
     ).toBeInTheDocument();
@@ -1045,6 +1054,20 @@ describe('App project launcher and lifecycle', () => {
     alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent(
       'This is not a valid LED Studio project. name:',
+    );
+    expect(projectStorage.releaseProject).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        fileName: 'broken.ledstudio',
+        handle: 'project-file-1',
+      }),
+    );
+    expect(projectStorage.releaseProject).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        fileName: 'invalid.ledstudio',
+        handle: 'project-file-2',
+      }),
     );
   });
 });

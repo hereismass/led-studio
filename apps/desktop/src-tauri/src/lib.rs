@@ -33,6 +33,7 @@ pub fn run() {
             lifecycle::register_exit_listener,
             lifecycle::unregister_exit_listener,
             project_files::open_project,
+            project_files::release_project_file,
             project_files::save_project,
             project_files::save_project_as,
         ])

@@ -2,7 +2,11 @@ import {
   kmsFourString10LedProfile,
   validateProjectHardwareReferences,
 } from '@led-studio/hardware-profiles';
-import { parseProject, type Project } from '@led-studio/project-format';
+import {
+  parseProject,
+  PROJECT_LIMITS,
+  type Project,
+} from '@led-studio/project-format';
 import { describe, expect, it } from 'vitest';
 import {
   MAX_EDITOR_HISTORY_REVISIONS,
@@ -46,6 +50,10 @@ const KEY_COPY_ID = '44444444-4444-4444-8444-444444444444';
 function ids(...values: string[]): ProjectEntityIdFactory {
   let index = 0;
   return () => values[index++]!;
+}
+
+function generatedId(index: number): string {
+  return `00000000-0000-4000-8000-${index.toString(16).padStart(12, '0')}`;
 }
 
 function projectWithPalette(): Project {
@@ -610,6 +618,110 @@ describe('editor commands', () => {
       { id: GROUP_COPY_ID, name: 'New Group Copy' },
     ]);
     expectValid(project);
+  });
+
+  it('rejects editor commands that would exceed collection limits', () => {
+    const paletteAtLimit: Project = {
+      ...projectWithPalette(),
+      palette: Array.from(
+        { length: PROJECT_LIMITS.paletteTokens },
+        (_, index) => ({
+          id: generatedId(index + 1),
+          name: `Colour ${index + 1}`,
+          value: '#FFFFFF',
+        }),
+      ),
+    };
+    expect(() =>
+      applyEditorCommand(paletteAtLimit, {
+        id: generatedId(10_000),
+        type: 'palette-token-added',
+      }),
+    ).toThrow(/cannot contain more than 256/);
+
+    const project = projectWithPalette();
+    project.scenes = [
+      {
+        id: SCENE_ID,
+        layers: Array.from(
+          { length: PROJECT_LIMITS.layersPerScene },
+          (_, index) => ({
+            effect: {
+              cycleLengthBeats: 1,
+              maxBrightnessPercent: 100,
+              minBrightnessPercent: 0,
+              paletteTokenId: HOT_PINK_ID,
+              phaseOffsetBeats: 0,
+              type: 'pulse' as const,
+              waveform: 'sine' as const,
+            },
+            enabled: true,
+            endBeat: 4,
+            id: generatedId(index + 20_000),
+            kind: 'effect' as const,
+            locked: false,
+            name: `Layer ${index + 1}`,
+            startBeat: 0,
+            target: { groupId: 'all-leds', kind: 'profile-group' as const },
+          }),
+        ),
+        ledStates: {},
+        loopLengthBeats: 4,
+        name: 'Full scene',
+      },
+    ];
+    expect(() =>
+      applyEditorCommand(project, {
+        id: generatedId(30_000),
+        layerType: 'pulse',
+        sceneId: SCENE_ID,
+        target: { groupId: 'all-leds', kind: 'profile-group' },
+        type: 'scene-layer-added',
+      }),
+    ).toThrow(/cannot contain more than 512/);
+  });
+
+  it('validates all duplicate IDs as one collision-safe batch', () => {
+    const project = projectWithPalette();
+    project.scenes = [
+      {
+        id: SCENE_ID,
+        layers: [
+          {
+            effect: {
+              cycleLengthBeats: 1,
+              maxBrightnessPercent: 100,
+              minBrightnessPercent: 0,
+              paletteTokenId: HOT_PINK_ID,
+              phaseOffsetBeats: 0,
+              type: 'pulse',
+              waveform: 'sine',
+            },
+            enabled: true,
+            endBeat: 4,
+            id: LAYER_ID,
+            kind: 'effect',
+            locked: false,
+            name: 'Pulse',
+            startBeat: 0,
+            target: { groupId: 'all-leds', kind: 'profile-group' },
+          },
+        ],
+        ledStates: {},
+        loopLengthBeats: 4,
+        name: 'Scene',
+      },
+    ];
+
+    expect(() =>
+      applyEditorCommand(project, {
+        id: SCENE_COPY_ID,
+        keyframeIds: [[]],
+        layerIds: [SCENE_COPY_ID],
+        sourceId: SCENE_ID,
+        type: 'scene-duplicated',
+      }),
+    ).toThrowError(expect.objectContaining({ code: 'duplicate-entity-id' }));
   });
 });
 

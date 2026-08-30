@@ -49,6 +49,12 @@ export class PreviewPlaybackController {
 
   readonly getPositionSnapshot = (): number => this.snapshot.positionBeats;
 
+  readonly getQuarterBeatPositionSnapshot = (): number =>
+    Math.min(
+      this.loopLengthBeats,
+      Math.round(this.snapshot.positionBeats * 4) / 4,
+    );
+
   readonly getStatusSnapshot = (): PreviewPlaybackStatus =>
     this.snapshot.status;
 

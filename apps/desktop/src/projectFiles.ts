@@ -12,11 +12,48 @@ export interface OpenedProjectFile extends ProjectFileReference {
 
 export interface ProjectStorageGateway {
   openProject(): Promise<OpenedProjectFile | null>;
+  releaseProject(file: ProjectFileReference): Promise<void>;
   saveProject(file: ProjectFileReference, contents: string): Promise<void>;
   saveProjectAs(
     suggestedName: string,
     contents: string,
   ): Promise<ProjectFileReference | null>;
+}
+
+export type ProjectFileErrorCode =
+  | 'file-too-large'
+  | 'invalid-handle'
+  | 'path-unavailable'
+  | 'read-failed'
+  | 'registry-unavailable'
+  | 'write-failed';
+
+export interface ProjectFileError {
+  code: ProjectFileErrorCode;
+  message: string;
+}
+
+export function asProjectFileError(error: unknown): ProjectFileError | null {
+  if (
+    typeof error !== 'object' ||
+    error === null ||
+    !('code' in error) ||
+    !('message' in error) ||
+    typeof error.code !== 'string' ||
+    typeof error.message !== 'string'
+  )
+    return null;
+  const codes: ProjectFileErrorCode[] = [
+    'file-too-large',
+    'invalid-handle',
+    'path-unavailable',
+    'read-failed',
+    'registry-unavailable',
+    'write-failed',
+  ];
+  return codes.includes(error.code as ProjectFileErrorCode)
+    ? { code: error.code as ProjectFileErrorCode, message: error.message }
+    : null;
 }
 
 export type UnsavedChangesDecision = 'cancel' | 'discard' | 'save';
@@ -50,6 +87,12 @@ export async function saveProjectAs(
   });
 }
 
+export async function releaseProject(
+  file: ProjectFileReference,
+): Promise<void> {
+  await invoke('release_project_file', { handle: file.handle });
+}
+
 export async function confirmUnsavedChanges(
   name: string,
   intent: UnsavedChangesIntent,
@@ -78,6 +121,7 @@ export async function confirmUnsavedChanges(
 
 export const nativeProjectStorageGateway: ProjectStorageGateway = {
   openProject,
+  releaseProject,
   saveProject,
   saveProjectAs,
 };

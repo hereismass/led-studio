@@ -31,6 +31,7 @@ export function App({
     unsavedChanges,
   });
   const { activeProject } = session.state;
+  const { redo, save, undo } = session;
 
   useEffect(() => {
     if (!activeProject) {
@@ -40,7 +41,7 @@ export function App({
     function handleEditorShortcut(event: KeyboardEvent) {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
         event.preventDefault();
-        void session.save(event.shiftKey);
+        void save(event.shiftKey);
         return;
       }
 
@@ -55,14 +56,14 @@ export function App({
         event.key.toLowerCase() === 'z'
       ) {
         event.preventDefault();
-        if (event.shiftKey) session.redo();
-        else session.undo();
+        if (event.shiftKey) redo();
+        else undo();
       }
     }
 
     window.addEventListener('keydown', handleEditorShortcut);
     return () => window.removeEventListener('keydown', handleEditorShortcut);
-  }, [activeProject, session.redo, session.save, session.undo]);
+  }, [activeProject, redo, save, undo]);
 
   if (activeProject) {
     return (

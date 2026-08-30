@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  PROJECT_LIMITS,
   ProjectSchema,
   ProjectFormatError,
   parseProject,
@@ -7,6 +8,10 @@ import {
   serializeProject,
   type Project,
 } from '../src/index.js';
+
+function generatedId(index: number): string {
+  return `90000000-0000-4000-8000-${index.toString(16).padStart(12, '0')}`;
+}
 
 const HOT_PINK_ID = '8b2c3d4e-5f60-4a71-8b92-c3d4e5f60718';
 const ELECTRIC_GREEN_ID = '1a2b3c4d-5e6f-4789-8abc-def012345678';
@@ -61,7 +66,10 @@ describe('ProjectSchema', () => {
   });
 
   it('requires a project name', () => {
-    const { name: _, ...projectWithoutName } = validProject;
+    const projectWithoutName: Partial<typeof validProject> = {
+      ...validProject,
+    };
+    delete projectWithoutName.name;
     expect(ProjectSchema.safeParse(projectWithoutName).success).toBe(false);
   });
 
@@ -492,7 +500,8 @@ describe('ProjectSchema', () => {
   });
 
   it('defaults timing for earlier version 2 documents', () => {
-    const { timing: _, ...withoutTiming } = validProject;
+    const withoutTiming: Partial<typeof validProject> = { ...validProject };
+    delete withoutTiming.timing;
     expect(parseProject(withoutTiming).timing).toEqual({
       previewBpm: 120,
       timeSignature: { denominator: 4, numerator: 4 },
@@ -515,6 +524,118 @@ describe('ProjectSchema', () => {
         },
       }).success,
     ).toBe(false);
+  });
+
+  it('enforces generous project collection and loop limits', () => {
+    expect(
+      ProjectSchema.safeParse({
+        ...validProject,
+        palette: Array.from(
+          { length: PROJECT_LIMITS.paletteTokens + 1 },
+          (_, index) => ({
+            id: generatedId(index),
+            name: `Colour ${index}`,
+            value: '#FFFFFF',
+          }),
+        ),
+      }).success,
+    ).toBe(false);
+    expect(
+      ProjectSchema.safeParse({
+        ...validProject,
+        scenes: Array.from(
+          { length: PROJECT_LIMITS.scenes + 1 },
+          (_, index) => ({
+            id: generatedId(index),
+            layers: [],
+            ledStates: {},
+            loopLengthBeats: 4,
+            name: `Scene ${index}`,
+          }),
+        ),
+      }).success,
+    ).toBe(false);
+    expect(
+      ProjectSchema.safeParse({
+        ...validProject,
+        scenes: [
+          {
+            id: generatedId(1),
+            layers: [],
+            ledStates: {},
+            loopLengthBeats: PROJECT_LIMITS.loopLengthBeats + 0.25,
+            name: 'Too long',
+          },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
+  it('limits keyframes per track and total project entities', () => {
+    let nextId = 100;
+    const createKeyframes = () =>
+      Array.from({ length: PROJECT_LIMITS.keyframesPerTrack }, (_, index) => ({
+        beat: index / 4,
+        brightnessPercent: index % 101,
+        id: generatedId(nextId++),
+      }));
+    const createLayer = (index: number) => ({
+      enabled: true,
+      endBeat: 1024,
+      id: generatedId(nextId++),
+      kind: 'keyframe' as const,
+      locked: false,
+      name: `Layer ${index}`,
+      startBeat: 0,
+      target: { kind: 'leds' as const, ledIds: ['led-1'] },
+      tracks: {
+        brightness: { keyframes: createKeyframes() },
+        colour: { interpolation: 'step' as const, keyframes: [] },
+      },
+    });
+    const oversizedTrack = createLayer(0);
+    oversizedTrack.tracks.brightness.keyframes.push({
+      beat: 1024,
+      brightnessPercent: 100,
+      id: generatedId(nextId++),
+    });
+    expect(
+      ProjectSchema.safeParse({
+        ...validProject,
+        scenes: [
+          {
+            id: generatedId(nextId++),
+            layers: [oversizedTrack],
+            ledStates: {},
+            loopLengthBeats: 1024,
+            name: 'Oversized track',
+          },
+        ],
+      }).success,
+    ).toBe(false);
+
+    const layers = Array.from({ length: 13 }, (_, index) => createLayer(index));
+    const result = ProjectSchema.safeParse({
+      ...validProject,
+      scenes: [
+        {
+          id: generatedId(nextId++),
+          layers,
+          ledStates: {},
+          loopLengthBeats: 1024,
+          name: 'Oversized project',
+        },
+      ],
+    });
+    expect(result.success).toBe(false);
+    if (!result.success)
+      expect(result.error.issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            message: expect.stringContaining('total entities'),
+          }),
+        ]),
+      );
   });
 
   it('rejects fields outside the version 2 format', () => {

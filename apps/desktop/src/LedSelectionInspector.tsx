@@ -58,10 +58,11 @@ export function LedSelectionInspector({
   const brightnessInteraction = useRafGroupedInteraction(
     (value: number, options) => onBrightnessChange(value, options),
   );
+  const selectedLedKey = leds.map((led) => led.id).join('|');
 
   useEffect(
     () => setDraft(brightness),
-    [brightness, leds.map((led) => led.id).join('|'), mixedBrightness],
+    [brightness, mixedBrightness, selectedLedKey],
   );
 
   const brightnessStyle = {

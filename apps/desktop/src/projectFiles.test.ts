@@ -9,8 +9,10 @@ vi.mock('@tauri-apps/api/core', () => ({ invoke: invokeMock }));
 vi.mock('@tauri-apps/plugin-dialog', () => ({ message: messageMock }));
 
 import {
+  asProjectFileError,
   confirmUnsavedChanges,
   openProject,
+  releaseProject,
   saveProject,
   saveProjectAs,
 } from './projectFiles';
@@ -45,6 +47,35 @@ describe('project storage adapter', () => {
       contents: '{"project":true}\n',
       handle: 'project-file-1',
     });
+  });
+
+  it('releases an opaque native file handle', async () => {
+    invokeMock.mockResolvedValue(undefined);
+
+    await releaseProject({
+      fileName: 'show.ledstudio',
+      handle: 'project-file-1',
+    });
+
+    expect(invokeMock).toHaveBeenCalledWith('release_project_file', {
+      handle: 'project-file-1',
+    });
+  });
+
+  it('recognizes only structured native project-file errors', () => {
+    expect(
+      asProjectFileError({
+        code: 'file-too-large',
+        message: 'Project is too large',
+      }),
+    ).toEqual({
+      code: 'file-too-large',
+      message: 'Project is too large',
+    });
+    expect(asProjectFileError(new Error('Project is too large'))).toBeNull();
+    expect(
+      asProjectFileError({ code: 'unexpected', message: 'Unknown' }),
+    ).toBeNull();
   });
 
   it('passes Save As selection and writing to Rust', async () => {

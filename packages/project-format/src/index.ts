@@ -2,6 +2,17 @@ import { z } from 'zod';
 
 export const PROJECT_SCHEMA_VERSION = 2 as const;
 
+export const PROJECT_LIMITS = {
+  fileBytes: 32 * 1024 * 1024,
+  groups: 256,
+  keyframesPerTrack: 4096,
+  layersPerScene: 512,
+  loopLengthBeats: 4096,
+  paletteTokens: 256,
+  scenes: 256,
+  totalEntities: 50_000,
+} as const;
+
 export const ProjectNameSchema = z
   .string()
   .trim()
@@ -73,6 +84,10 @@ export const SceneLedStateSchema = z
 export const SceneLoopLengthSchema = z
   .number()
   .positive()
+  .max(
+    PROJECT_LIMITS.loopLengthBeats,
+    `Scene loops cannot exceed ${PROJECT_LIMITS.loopLengthBeats} beats`,
+  )
   .refine((value) => Number.isInteger(value * 4), {
     message: 'Scene loop length must use quarter-beat increments',
   });
@@ -243,17 +258,23 @@ export const ColourKeyframeSchema = z
 function orderedKeyframesSchema<T extends z.ZodType<{ beat: number }>>(
   keyframeSchema: T,
 ) {
-  return z.array(keyframeSchema).superRefine((keyframes, context) => {
-    for (let index = 1; index < keyframes.length; index += 1) {
-      if (keyframes[index].beat <= keyframes[index - 1].beat) {
-        context.addIssue({
-          code: 'custom',
-          message: 'Keyframes must be ordered at unique beat positions',
-          path: [index, 'beat'],
-        });
+  return z
+    .array(keyframeSchema)
+    .max(
+      PROJECT_LIMITS.keyframesPerTrack,
+      `Tracks cannot contain more than ${PROJECT_LIMITS.keyframesPerTrack} keyframes`,
+    )
+    .superRefine((keyframes, context) => {
+      for (let index = 1; index < keyframes.length; index += 1) {
+        if (keyframes[index].beat <= keyframes[index - 1].beat) {
+          context.addIssue({
+            code: 'custom',
+            message: 'Keyframes must be ordered at unique beat positions',
+            path: [index, 'beat'],
+          });
+        }
       }
-    }
-  });
+    });
 }
 
 export const BrightnessKeyframeTrackSchema = z
@@ -292,7 +313,13 @@ export const SceneLayerSchema = z.discriminatedUnion('kind', [
 export const SceneSchema = z
   .object({
     id: ProjectEntityIdSchema,
-    layers: z.array(SceneLayerSchema).default([]),
+    layers: z
+      .array(SceneLayerSchema)
+      .max(
+        PROJECT_LIMITS.layersPerScene,
+        `Scenes cannot contain more than ${PROJECT_LIMITS.layersPerScene} layers`,
+      )
+      .default([]),
     ledStates: z.record(z.string().trim().min(1), SceneLedStateSchema),
     loopLengthBeats: SceneLoopLengthSchema,
     name: SceneNameSchema,
@@ -311,14 +338,56 @@ export const ProjectSchema = z
       .string()
       .trim()
       .min(1, 'Hardware profile cannot be empty'),
-    palette: z.array(PaletteTokenSchema),
-    scenes: z.array(SceneSchema),
+    palette: z
+      .array(PaletteTokenSchema)
+      .max(
+        PROJECT_LIMITS.paletteTokens,
+        `Projects cannot contain more than ${PROJECT_LIMITS.paletteTokens} palette tokens`,
+      ),
+    scenes: z
+      .array(SceneSchema)
+      .max(
+        PROJECT_LIMITS.scenes,
+        `Projects cannot contain more than ${PROJECT_LIMITS.scenes} scenes`,
+      ),
     sequence: ReservedSequenceSchema,
-    groups: z.array(ProjectGroupSchema),
+    groups: z
+      .array(ProjectGroupSchema)
+      .max(
+        PROJECT_LIMITS.groups,
+        `Projects cannot contain more than ${PROJECT_LIMITS.groups} groups`,
+      ),
     timing: ProjectTimingSchema.default(DEFAULT_PROJECT_TIMING),
   })
   .strict()
   .superRefine((project, context) => {
+    const totalEntities =
+      project.palette.length +
+      project.groups.length +
+      project.scenes.reduce(
+        (sceneTotal, scene) =>
+          sceneTotal +
+          1 +
+          scene.layers.reduce(
+            (layerTotal, layer) =>
+              layerTotal +
+              1 +
+              (layer.kind === 'keyframe'
+                ? layer.tracks.brightness.keyframes.length +
+                  layer.tracks.colour.keyframes.length
+                : 0),
+            0,
+          ),
+        0,
+      );
+    if (totalEntities > PROJECT_LIMITS.totalEntities) {
+      context.addIssue({
+        code: 'custom',
+        message: `Projects cannot contain more than ${PROJECT_LIMITS.totalEntities} total entities`,
+        path: ['scenes'],
+      });
+    }
+
     const ids = new Set<string>();
     const names = new Set<string>();
 

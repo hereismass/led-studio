@@ -88,6 +88,18 @@ describe('PreviewPlaybackController', () => {
     expect(controller.getSnapshot().positionBeats).toBe(0);
   });
 
+  it('exposes a stable quarter-beat authoring position between snap points', () => {
+    const { controller } = configuredController();
+    controller.seek(1.02);
+    expect(controller.getQuarterBeatPositionSnapshot()).toBe(1);
+    controller.seek(1.11);
+    expect(controller.getQuarterBeatPositionSnapshot()).toBe(1);
+    controller.seek(1.14);
+    expect(controller.getQuarterBeatPositionSnapshot()).toBe(1.25);
+    controller.seek(3.99);
+    expect(controller.getQuarterBeatPositionSnapshot()).toBe(4);
+  });
+
   it('preserves phase across tempo changes and normalizes shorter loops', () => {
     const { clock, controller } = configuredController();
     controller.play();

@@ -9,6 +9,35 @@ use std::{
 use tauri_plugin_dialog::DialogExt;
 use uuid::Uuid;
 
+const MAX_PROJECT_FILE_BYTES: u64 = 32 * 1024 * 1024;
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ProjectFileErrorCode {
+    FileTooLarge,
+    InvalidHandle,
+    PathUnavailable,
+    ReadFailed,
+    RegistryUnavailable,
+    WriteFailed,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectFileError {
+    code: ProjectFileErrorCode,
+    message: String,
+}
+
+impl ProjectFileError {
+    fn new(code: ProjectFileErrorCode, message: impl Into<String>) -> Self {
+        Self {
+            code,
+            message: message.into(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectFileReference {
@@ -30,7 +59,7 @@ pub struct ProjectFileRegistry {
 }
 
 impl ProjectFileRegistry {
-    fn register(&self, path: PathBuf) -> Result<ProjectFileReference, String> {
+    fn register(&self, path: PathBuf) -> Result<ProjectFileReference, ProjectFileError> {
         let handle = Uuid::new_v4().to_string();
         let file_name = path
             .file_name()
@@ -39,19 +68,54 @@ impl ProjectFileRegistry {
             .to_owned();
         self.files
             .lock()
-            .map_err(|_| "The project file registry is unavailable.".to_owned())?
+            .map_err(|_| {
+                ProjectFileError::new(
+                    ProjectFileErrorCode::RegistryUnavailable,
+                    "The project file registry is unavailable.",
+                )
+            })?
             .insert(handle.clone(), path);
 
         Ok(ProjectFileReference { file_name, handle })
     }
 
-    fn resolve(&self, handle: &str) -> Result<PathBuf, String> {
+    fn resolve(&self, handle: &str) -> Result<PathBuf, ProjectFileError> {
         self.files
             .lock()
-            .map_err(|_| "The project file registry is unavailable.".to_owned())?
+            .map_err(|_| {
+                ProjectFileError::new(
+                    ProjectFileErrorCode::RegistryUnavailable,
+                    "The project file registry is unavailable.",
+                )
+            })?
             .get(handle)
             .cloned()
-            .ok_or_else(|| "The project file handle is no longer valid.".to_owned())
+            .ok_or_else(|| {
+                ProjectFileError::new(
+                    ProjectFileErrorCode::InvalidHandle,
+                    "The project file handle is no longer valid.",
+                )
+            })
+    }
+
+    fn release(&self, handle: &str) -> Result<(), ProjectFileError> {
+        let removed = self
+            .files
+            .lock()
+            .map_err(|_| {
+                ProjectFileError::new(
+                    ProjectFileErrorCode::RegistryUnavailable,
+                    "The project file registry is unavailable.",
+                )
+            })?
+            .remove(handle);
+        if removed.is_none() {
+            return Err(ProjectFileError::new(
+                ProjectFileErrorCode::InvalidHandle,
+                "The project file handle is no longer valid.",
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -117,11 +181,47 @@ fn atomic_write(path: &Path, contents: &[u8]) -> io::Result<()> {
     Ok(())
 }
 
+fn read_project_contents(path: &Path) -> Result<String, ProjectFileError> {
+    let metadata = fs::metadata(path).map_err(|error| {
+        ProjectFileError::new(
+            ProjectFileErrorCode::ReadFailed,
+            format!("The selected project could not be inspected: {error}"),
+        )
+    })?;
+    if metadata.len() > MAX_PROJECT_FILE_BYTES {
+        return Err(ProjectFileError::new(
+            ProjectFileErrorCode::FileTooLarge,
+            "The selected project is larger than the 32 MiB limit.",
+        ));
+    }
+    fs::read_to_string(path).map_err(|error| {
+        ProjectFileError::new(
+            ProjectFileErrorCode::ReadFailed,
+            format!("The selected project could not be read: {error}"),
+        )
+    })
+}
+
+fn write_project_contents(path: &Path, contents: String) -> Result<(), ProjectFileError> {
+    if contents.len() as u64 > MAX_PROJECT_FILE_BYTES {
+        return Err(ProjectFileError::new(
+            ProjectFileErrorCode::FileTooLarge,
+            "The project is larger than the 32 MiB limit.",
+        ));
+    }
+    atomic_write(path, contents.as_bytes()).map_err(|error| {
+        ProjectFileError::new(
+            ProjectFileErrorCode::WriteFailed,
+            format!("The project could not be saved: {error}"),
+        )
+    })
+}
+
 #[tauri::command]
 pub async fn open_project(
     app: tauri::AppHandle,
     registry: tauri::State<'_, ProjectFileRegistry>,
-) -> Result<Option<OpenedProjectFile>, String> {
+) -> Result<Option<OpenedProjectFile>, ProjectFileError> {
     let selected_path = app
         .dialog()
         .file()
@@ -130,11 +230,21 @@ pub async fn open_project(
     let Some(selected_path) = selected_path else {
         return Ok(None);
     };
-    let path = selected_path
-        .into_path()
-        .map_err(|error| format!("The selected project path is unavailable: {error}"))?;
-    let contents = fs::read_to_string(&path)
-        .map_err(|error| format!("The selected project could not be read: {error}"))?;
+    let path = selected_path.into_path().map_err(|error| {
+        ProjectFileError::new(
+            ProjectFileErrorCode::PathUnavailable,
+            format!("The selected project path is unavailable: {error}"),
+        )
+    })?;
+    let read_path = path.clone();
+    let contents = tauri::async_runtime::spawn_blocking(move || read_project_contents(&read_path))
+        .await
+        .map_err(|error| {
+            ProjectFileError::new(
+                ProjectFileErrorCode::ReadFailed,
+                format!("The selected project read task failed: {error}"),
+            )
+        })??;
     let reference = registry.register(path)?;
 
     Ok(Some(OpenedProjectFile {
@@ -149,10 +259,16 @@ pub async fn save_project(
     handle: String,
     contents: String,
     registry: tauri::State<'_, ProjectFileRegistry>,
-) -> Result<(), String> {
+) -> Result<(), ProjectFileError> {
     let path = registry.resolve(&handle)?;
-    atomic_write(&path, contents.as_bytes())
-        .map_err(|error| format!("The project could not be saved: {error}"))
+    tauri::async_runtime::spawn_blocking(move || write_project_contents(&path, contents))
+        .await
+        .map_err(|error| {
+            ProjectFileError::new(
+                ProjectFileErrorCode::WriteFailed,
+                format!("The project write task failed: {error}"),
+            )
+        })?
 }
 
 #[tauri::command]
@@ -161,7 +277,7 @@ pub async fn save_project_as(
     suggested_name: String,
     contents: String,
     registry: tauri::State<'_, ProjectFileRegistry>,
-) -> Result<Option<ProjectFileReference>, String> {
+) -> Result<Option<ProjectFileReference>, ProjectFileError> {
     let selected_path = app
         .dialog()
         .file()
@@ -172,16 +288,32 @@ pub async fn save_project_as(
     let Some(selected_path) = selected_path else {
         return Ok(None);
     };
-    let path = ensure_project_extension(
-        selected_path
-            .into_path()
-            .map_err(|error| format!("The selected project path is unavailable: {error}"))?,
-    );
+    let path = ensure_project_extension(selected_path.into_path().map_err(|error| {
+        ProjectFileError::new(
+            ProjectFileErrorCode::PathUnavailable,
+            format!("The selected project path is unavailable: {error}"),
+        )
+    })?);
 
-    atomic_write(&path, contents.as_bytes())
-        .map_err(|error| format!("The project could not be saved: {error}"))?;
+    let write_path = path.clone();
+    tauri::async_runtime::spawn_blocking(move || write_project_contents(&write_path, contents))
+        .await
+        .map_err(|error| {
+            ProjectFileError::new(
+                ProjectFileErrorCode::WriteFailed,
+                format!("The project write task failed: {error}"),
+            )
+        })??;
 
     registry.register(path).map(Some)
+}
+
+#[tauri::command]
+pub fn release_project_file(
+    handle: String,
+    registry: tauri::State<'_, ProjectFileRegistry>,
+) -> Result<(), ProjectFileError> {
+    registry.release(&handle)
 }
 
 #[cfg(test)]
@@ -244,5 +376,42 @@ mod tests {
     fn rejects_unknown_file_handles() {
         let registry = ProjectFileRegistry::default();
         assert!(registry.resolve("unknown").is_err());
+    }
+
+    #[test]
+    fn releases_registered_file_handles() {
+        let registry = ProjectFileRegistry::default();
+        let reference = registry
+            .register(PathBuf::from("show.ledstudio"))
+            .expect("registered handle");
+        assert!(registry.resolve(&reference.handle).is_ok());
+        registry
+            .release(&reference.handle)
+            .expect("released handle");
+        assert!(registry.resolve(&reference.handle).is_err());
+    }
+
+    #[test]
+    fn rejects_projects_larger_than_the_file_limit() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let path = directory.path().join("oversized.ledstudio");
+        let file = File::create(&path).expect("project file");
+        file.set_len(MAX_PROJECT_FILE_BYTES + 1)
+            .expect("sparse oversized file");
+
+        let error = read_project_contents(&path).expect_err("oversized project rejected");
+        assert_eq!(error.code, ProjectFileErrorCode::FileTooLarge);
+    }
+
+    #[test]
+    fn refuses_to_write_projects_larger_than_the_file_limit() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let path = directory.path().join("oversized.ledstudio");
+        let contents = "x".repeat((MAX_PROJECT_FILE_BYTES + 1) as usize);
+
+        let error =
+            write_project_contents(&path, contents).expect_err("oversized project rejected");
+        assert_eq!(error.code, ProjectFileErrorCode::FileTooLarge);
+        assert!(!path.exists());
     }
 }

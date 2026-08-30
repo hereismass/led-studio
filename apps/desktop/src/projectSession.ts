@@ -31,6 +31,7 @@ import type {
   UnsavedChangesGateway,
   UnsavedChangesIntent,
 } from './projectFiles';
+import { asProjectFileError } from './projectFiles';
 
 const DEFAULT_HARDWARE_PROFILE = KMS_PROFILE_ID;
 
@@ -245,6 +246,25 @@ function describeProjectError(error: unknown): string {
   return `This is not a valid LED Studio project. ${path}: ${issue.message}`;
 }
 
+function describeStorageError(error: unknown, action: 'open' | 'save'): string {
+  const fileError = asProjectFileError(error);
+  if (!fileError)
+    return action === 'open'
+      ? 'LED Studio could not read the selected file.'
+      : 'LED Studio could not save this project.';
+  if (fileError.code === 'file-too-large')
+    return 'This project exceeds the 32 MiB file limit.';
+  if (fileError.code === 'invalid-handle')
+    return 'The original project file is no longer available. Use Save As to choose it again.';
+  if (fileError.code === 'path-unavailable')
+    return 'The selected file location is no longer available.';
+  if (fileError.code === 'registry-unavailable')
+    return 'LED Studio cannot access its open-file registry right now.';
+  return action === 'open'
+    ? 'LED Studio could not read the selected file.'
+    : 'LED Studio could not write the selected file.';
+}
+
 interface ProjectSessionDependencies {
   appLifecycle: AppLifecycleGateway;
   projectStorage: ProjectStorageGateway;
@@ -264,6 +284,17 @@ export function useProjectSession({
     stateRef.current = nextState;
     setState(nextState);
   }, []);
+
+  const releaseProjectFile = useCallback(
+    async (file: ProjectFileReference): Promise<void> => {
+      try {
+        await projectStorage.releaseProject(file);
+      } catch (error) {
+        console.error('Could not release LED Studio project handle', error);
+      }
+    },
+    [projectStorage],
+  );
 
   const beginOperation = useCallback(
     (operation: Exclude<ProjectOperation, 'idle'>): boolean => {
@@ -314,20 +345,22 @@ export function useProjectSession({
           revision: snapshot.present.revision,
           type: 'save-succeeded',
         });
+        if (currentFile && currentFile.handle !== savedFile.handle)
+          void releaseProjectFile(currentFile);
         return true;
       } catch (error) {
         console.error('Could not save LED Studio project', error);
         dispatch({
           feedback: {
             kind: 'error',
-            message: 'LED Studio could not save this project.',
+            message: describeStorageError(error, 'save'),
           },
           type: 'save-failed',
         });
         return false;
       }
     },
-    [dispatch, projectStorage],
+    [dispatch, projectStorage, releaseProjectFile],
   );
 
   const save = useCallback(
@@ -358,12 +391,14 @@ export function useProjectSession({
           return false;
         }
       } else {
+        const source = stateRef.current.activeProject?.source;
         dispatch({ type: 'clear-active-project' });
+        if (source?.kind === 'file') void releaseProjectFile(source.file);
       }
 
       return true;
     },
-    [appLifecycle, dispatch],
+    [appLifecycle, dispatch, releaseProjectFile],
   );
 
   const requestLeave = useCallback(
@@ -494,7 +529,7 @@ export function useProjectSession({
     } catch (error) {
       console.error('Could not read selected LED Studio project', error);
       dispatch({
-        error: 'LED Studio could not read the selected file.',
+        error: describeStorageError(error, 'open'),
         type: 'launcher-error',
       });
       return;
@@ -521,9 +556,10 @@ export function useProjectSession({
         type: 'project-activated',
       });
     } catch (error) {
+      void releaseProjectFile(selectedFile);
       dispatch({ error: describeProjectError(error), type: 'launcher-error' });
     }
-  }, [beginOperation, dispatch, projectStorage]);
+  }, [beginOperation, dispatch, projectStorage, releaseProjectFile]);
 
   const executeCommand = useCallback(
     (

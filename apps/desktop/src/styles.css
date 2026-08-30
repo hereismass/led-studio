@@ -1844,6 +1844,15 @@ h1 {
 }
 
 .scene-tick-grid {
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.16) 1px, transparent 1px),
+    linear-gradient(to right, rgba(255, 255, 255, 0.09) 1px, transparent 1px),
+    linear-gradient(to right, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-repeat: repeat-x;
+  background-size:
+    var(--timeline-bar-width) 100%,
+    var(--timeline-beat-width) 100%,
+    var(--timeline-quarter-width) 100%;
   pointer-events: none;
 }
 

@@ -25,6 +25,16 @@ export function usePreviewPlaybackPosition(
   );
 }
 
+export function usePreviewPlaybackQuarterBeat(
+  controller: PreviewPlaybackController,
+) {
+  return useSyncExternalStore(
+    controller.subscribe,
+    controller.getQuarterBeatPositionSnapshot,
+    controller.getQuarterBeatPositionSnapshot,
+  );
+}
+
 export function usePreviewPlaybackStatus(
   controller: PreviewPlaybackController,
 ) {

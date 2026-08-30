@@ -9,22 +9,18 @@ import {
   createGroupDuplicatedCommand,
   createSceneAddedCommand,
   createSceneDuplicatedCommand,
-  nextAvailableKeyframeBeat,
   paletteTokenUsageCount,
   projectGroupUsageCount,
   type EditorCommand,
   type ExecuteEditorCommandOptions,
-  type KeyframeValue,
-  type KeyframeTrackKind,
 } from '@led-studio/editor-core';
 import { getHardwareProfile } from '@led-studio/hardware-profiles';
 import type {
-  KeyframeLayer,
   LayerTarget,
   ProjectGroup,
   Scene,
 } from '@led-studio/project-format';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AssetsPanel } from './AssetsPanel';
 import { HardwarePanel } from './HardwarePanel';
 import { InspectorPanel } from './InspectorPanel';
@@ -32,6 +28,7 @@ import { TimelinePanel } from './TimelinePanel';
 import { useScenePreview } from './useScenePreview';
 import { useWorkspaceLayout } from './useWorkspaceLayout';
 import { useWorkspaceSelection } from './useWorkspaceSelection';
+import { deriveWorkspaceSelection } from './workspaceSelectionModel';
 import { WorkspaceResizer } from './WorkspaceResizer';
 import { WorkspaceToolbar } from './WorkspaceToolbar';
 import {
@@ -89,60 +86,30 @@ export function ProjectWorkspace({
     setSelectedLedIds,
   } = useWorkspaceSelection(scenes, colours, project.groups);
 
-  const activeScene =
-    scenes.find((scene) => scene.id === activeSceneId) ?? null;
   const [expandedKeyframeLayerIds, setExpandedKeyframeLayerIds] = useState<
     string[]
   >([]);
-  const selectedToken =
-    inspectorTarget.kind === 'palette'
-      ? (colours.find((token) => token.id === inspectorTarget.id) ?? null)
-      : null;
-  const selectedScene =
-    inspectorTarget.kind === 'scene'
-      ? (scenes.find((scene) => scene.id === inspectorTarget.id) ?? null)
-      : null;
-  const selectedGroup =
-    inspectorTarget.kind === 'group'
-      ? (project.groups.find((group) => group.id === inspectorTarget.id) ??
-        null)
-      : null;
-  const selectedLayer =
-    inspectorTarget.kind === 'layer' &&
-    activeScene?.id === inspectorTarget.sceneId
-      ? (activeScene.layers.find((layer) => layer.id === inspectorTarget.id) ??
-        null)
-      : null;
-  const selectedKeyframeLayer =
-    inspectorTarget.kind === 'keyframe' &&
-    activeScene?.id === inspectorTarget.sceneId
-      ? (activeScene.layers.find(
-          (layer): layer is KeyframeLayer =>
-            layer.id === inspectorTarget.layerId && layer.kind === 'keyframe',
-        ) ?? null)
-      : null;
-  const selectedKeyframe =
-    inspectorTarget.kind === 'keyframe' &&
-    selectedKeyframeLayer?.kind === 'keyframe'
-      ? (selectedKeyframeLayer.tracks[inspectorTarget.track].keyframes.find(
-          ({ id }) => id === inspectorTarget.id,
-        ) ?? null)
-      : null;
-  const selectedKeyframeTrack =
-    inspectorTarget.kind === 'keyframe' ? inspectorTarget.track : null;
-  const canDuplicateKeyframe =
-    selectedKeyframeLayer?.kind === 'keyframe' &&
-    selectedKeyframe &&
-    selectedKeyframeTrack
-      ? nextAvailableKeyframeBeat(
-          selectedKeyframeLayer,
-          selectedKeyframeTrack,
-          selectedKeyframe.beat,
-          activeScene?.loopLengthBeats ?? 0,
-        ) !== null
-      : false;
-  const selectedLeds = profile.leds.filter((led) =>
-    selectedLedIds.includes(led.id),
+  const {
+    activeScene,
+    canDuplicateKeyframe,
+    selectedGroup,
+    selectedKeyframe,
+    selectedKeyframeLayer,
+    selectedKeyframeTrack,
+    selectedLayer,
+    selectedLeds,
+    selectedScene,
+    selectedToken,
+  } = useMemo(
+    () =>
+      deriveWorkspaceSelection(
+        project,
+        profile,
+        activeSceneId,
+        inspectorTarget,
+        selectedLedIds,
+      ),
+    [activeSceneId, inspectorTarget, profile, project, selectedLedIds],
   );
   const previewController = useScenePreview(
     activeScene,
