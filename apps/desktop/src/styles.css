@@ -1766,6 +1766,7 @@ h1 {
 }
 
 .scene-timeline-summary {
+  z-index: 30;
   position: sticky;
   left: 0;
   display: flex;
@@ -1829,6 +1830,11 @@ h1 {
 
 .scene-ruler-tick:last-child {
   transform: translateX(-1px);
+}
+
+.scene-ruler-tick:last-child span {
+  right: 5px;
+  left: auto;
 }
 
 .scene-tick-grid,
@@ -2058,7 +2064,7 @@ h1 {
 .keyframe-overview {
   z-index: 2;
   position: absolute;
-  inset: 0;
+  inset: 0 7px;
   pointer-events: none;
 }
 
@@ -2143,7 +2149,7 @@ h1 {
 
 .scene-keyframe-track {
   position: absolute;
-  inset: 0;
+  inset: 0 15px;
 }
 
 .scene-keyframe-active-window {
@@ -2153,6 +2159,35 @@ h1 {
   border: 1px solid rgba(128, 113, 255, 0.2);
   border-radius: 5px;
   background: rgba(128, 113, 255, 0.07);
+}
+
+.scene-keyframe-automation {
+  z-index: 1;
+  position: absolute;
+  inset: 9px 0;
+  width: 100%;
+  height: calc(100% - 18px);
+  overflow: visible;
+  pointer-events: none;
+}
+
+.scene-brightness-automation-fill {
+  fill: rgba(128, 113, 255, 0.16);
+  stroke: none;
+}
+
+.scene-brightness-automation-line {
+  fill: none;
+  stroke: #f4eff7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.6;
+}
+
+.scene-colour-automation-strip {
+  opacity: 0.58;
+  stroke: rgba(255, 255, 255, 0.22);
+  stroke-width: 0.45;
 }
 
 .scene-keyframe-diamond {

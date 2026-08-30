@@ -472,6 +472,44 @@ describe('App project launcher and lifecycle', () => {
       'aria-pressed',
       'true',
     );
+    expect(screen.getByTestId('brightness-automation')).toBeInTheDocument();
+    expect(screen.getByTestId('colour-automation')).toBeInTheDocument();
+
+    fireEvent.change(
+      screen.getByRole('slider', { name: 'Scene preview position' }),
+      { target: { value: '4' } },
+    );
+    const addTerminalBrightness = screen.getByRole('button', {
+      name: 'Add brightness keyframe at playhead',
+    });
+    expect(addTerminalBrightness).toBeEnabled();
+    await user.click(addTerminalBrightness);
+    const terminalBrightness = screen.getByRole('button', {
+      name: 'brightness keyframe at 4 beats, loop end',
+    });
+    expect(terminalBrightness).not.toHaveClass('scene-keyframe-cropped');
+    expect(terminalBrightness).toHaveAttribute(
+      'title',
+      'Loop endpoint used for interpolation before playback wraps',
+    );
+
+    await user.click(
+      screen.getByRole('button', { name: 'Add colour keyframe at playhead' }),
+    );
+    const terminalColourPicker = document.querySelector(
+      '.scene-keyframe-colour-picker',
+    );
+    expect(terminalColourPicker).not.toBeNull();
+    await user.click(
+      within(terminalColourPicker as HTMLElement).getByRole('button', {
+        name: 'White',
+      }),
+    );
+    expect(
+      screen.getByRole('button', {
+        name: 'colour keyframe at 4 beats, loop end',
+      }),
+    ).not.toHaveClass('scene-keyframe-cropped');
 
     const secondBrightnessKey = screen.getByRole('button', {
       name: 'brightness keyframe at 1 beats',

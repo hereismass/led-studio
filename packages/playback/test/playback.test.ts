@@ -7,6 +7,7 @@ import {
   evaluateBrightnessTrack,
   evaluateColourTrack,
   evaluateSceneFrame,
+  keyframesInActiveWindow,
   normalizeLoopPosition,
 } from '../src/index.js';
 
@@ -352,6 +353,65 @@ describe('scene evaluation', () => {
     expect(
       evaluateColourTrack({ interpolation: 'step', keyframes }, colours, 1),
     ).toBe('#FF2B9A');
+    expect(
+      evaluateColourTrack({ interpolation: 'step', keyframes }, colours, 2),
+    ).toBe('#45FF72');
+  });
+
+  it('uses terminal keys as inclusive interpolation endpoints', () => {
+    const brightnessKeyframes = [
+      {
+        beat: 0,
+        brightnessPercent: 0,
+        id: '11111111-1111-4111-8111-111111111111',
+      },
+      {
+        beat: 2,
+        brightnessPercent: 100,
+        id: '22222222-2222-4222-8222-222222222222',
+      },
+      {
+        beat: 4,
+        brightnessPercent: 0,
+        id: '33333333-3333-4333-8333-333333333333',
+      },
+    ];
+    expect(keyframesInActiveWindow(brightnessKeyframes, 0, 4)).toEqual(
+      brightnessKeyframes,
+    );
+    expect(keyframesInActiveWindow(brightnessKeyframes, 1, 3)).toEqual([
+      brightnessKeyframes[1],
+    ]);
+    expect(evaluateBrightnessTrack(brightnessKeyframes, 3)).toBe(50);
+    expect(evaluateBrightnessTrack(brightnessKeyframes, 4)).toBe(0);
+
+    const colours = new Map(palette.map((token) => [token.id, token.value]));
+    expect(
+      evaluateColourTrack(
+        {
+          interpolation: 'linear-rgb',
+          keyframes: [
+            {
+              beat: 0,
+              id: '44444444-4444-4444-8444-444444444444',
+              paletteTokenId: GREEN_ID,
+            },
+            {
+              beat: 2,
+              id: '55555555-5555-4555-8555-555555555555',
+              paletteTokenId: PINK_ID,
+            },
+            {
+              beat: 4,
+              id: '66666666-6666-4666-8666-666666666666',
+              paletteTokenId: GREEN_ID,
+            },
+          ],
+        },
+        colours,
+        3,
+      ),
+    ).toBe('#A29586');
   });
 
   it('applies independent keyframe properties over lower layers only inside the active window', () => {
@@ -379,6 +439,11 @@ describe('scene evaluation', () => {
                   beat: 2,
                   brightnessPercent: 100,
                   id: '22222222-2222-4222-8222-222222222222',
+                },
+                {
+                  beat: 3,
+                  brightnessPercent: 0,
+                  id: '33333333-3333-4333-8333-333333333333',
                 },
               ],
             },
@@ -412,7 +477,10 @@ describe('scene evaluation', () => {
     ).toMatchObject({ brightnessPercent: 50, colour: '#FF2B9A' });
     expect(
       evaluateSceneFrame(hybrid, palette, kmsFourString10LedProfile, 1)[0],
-    ).toMatchObject({ brightnessPercent: 75, colour: '#FF2B9A' });
+    ).toMatchObject({ brightnessPercent: 100, colour: '#FF2B9A' });
+    expect(
+      evaluateSceneFrame(hybrid, palette, kmsFourString10LedProfile, 2.5)[0],
+    ).toMatchObject({ brightnessPercent: 50, colour: '#FF2B9A' });
     expect(
       evaluateSceneFrame(hybrid, palette, kmsFourString10LedProfile, 3)[0],
     ).toMatchObject({ brightnessPercent: 50, colour: '#FF2B9A' });

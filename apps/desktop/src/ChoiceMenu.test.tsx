@@ -4,6 +4,24 @@ import { describe, expect, it, vi } from 'vitest';
 import { ChoiceMenu } from './ChoiceMenu';
 
 describe('ChoiceMenu', () => {
+  it('selects an option with the pointer', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <ChoiceMenu
+        ariaLabel="Add layer"
+        options={[{ label: 'Keyframes', value: 'keyframe' }]}
+        value={null}
+        onChange={onChange}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Add layer' }));
+    await user.click(screen.getByRole('option', { name: 'Keyframes' }));
+    expect(onChange).toHaveBeenCalledWith('keyframe');
+    expect(screen.queryByRole('listbox', { name: 'Add layer' })).toBeNull();
+  });
+
   it('supports arrow navigation, selection, Escape, and focus restoration', async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();

@@ -94,7 +94,7 @@ export function KeyframeInspector({
   track,
 }: KeyframeInspectorProps) {
   const cropped =
-    keyframe.beat < layer.startBeat || keyframe.beat >= layer.endBeat;
+    keyframe.beat < layer.startBeat || keyframe.beat > layer.endBeat;
   const colourKeyframe =
     track === 'colour' && 'paletteTokenId' in keyframe ? keyframe : null;
   const brightnessKeyframe =

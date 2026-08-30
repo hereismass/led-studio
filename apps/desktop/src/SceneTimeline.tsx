@@ -3,8 +3,13 @@ import type {
   KeyframeTrackKind,
   KeyframeValue,
 } from '@led-studio/editor-core';
-import { evaluateBrightnessTrack } from '@led-studio/playback';
+import {
+  evaluateBrightnessTrack,
+  keyframesInActiveWindow,
+} from '@led-studio/playback';
 import type {
+  BrightnessKeyframe,
+  ColourKeyframeTrack,
   KeyframeLayer,
   PaletteToken,
   ProjectTiming,
@@ -13,12 +18,19 @@ import type {
 } from '@led-studio/project-format';
 import {
   Fragment,
+  memo,
+  useId,
+  useMemo,
   useRef,
   useState,
   type KeyboardEvent,
   type PointerEvent,
 } from 'react';
 import { ChoiceMenu } from './ChoiceMenu';
+import {
+  buildBrightnessAutomationPoints,
+  buildColourAutomationStops,
+} from './keyframeTimelineVisuals';
 import { PaletteSwatches } from './PaletteSwatches';
 import type { PreviewPlaybackController } from './previewPlayback';
 import { usePreviewPlaybackSnapshot } from './usePreviewPlaybackSnapshot';
@@ -145,6 +157,94 @@ function snap(value: number): number {
   return Math.round(value * 4) / 4;
 }
 
+const BrightnessAutomation = memo(function BrightnessAutomation({
+  endBeat,
+  keyframes,
+  loopLengthBeats,
+  startBeat,
+}: {
+  endBeat: number;
+  keyframes: readonly BrightnessKeyframe[];
+  loopLengthBeats: number;
+  startBeat: number;
+}) {
+  const points = buildBrightnessAutomationPoints(
+    keyframes,
+    startBeat,
+    endBeat,
+    loopLengthBeats,
+  );
+  if (points.length === 0) return null;
+  const linePoints = points
+    .map(({ xPercent, yPercent }) => `${xPercent},${yPercent}`)
+    .join(' ');
+  const areaPath = `M ${points[0].xPercent} 100 L ${linePoints.replaceAll(' ', ' L ')} L ${points[points.length - 1].xPercent} 100 Z`;
+  return (
+    <svg
+      aria-hidden="true"
+      className="scene-keyframe-automation scene-brightness-automation"
+      data-testid="brightness-automation"
+      preserveAspectRatio="none"
+      viewBox="0 0 100 100"
+    >
+      <path className="scene-brightness-automation-fill" d={areaPath} />
+      <polyline
+        className="scene-brightness-automation-line"
+        points={linePoints}
+        vectorEffect="non-scaling-stroke"
+      />
+    </svg>
+  );
+});
+
+const ColourAutomation = memo(function ColourAutomation({
+  endBeat,
+  loopLengthBeats,
+  palette,
+  startBeat,
+  track,
+}: {
+  endBeat: number;
+  loopLengthBeats: number;
+  palette: readonly PaletteToken[];
+  startBeat: number;
+  track: ColourKeyframeTrack;
+}) {
+  const gradientId = `colour-automation-${useId().replace(/:/g, '')}`;
+  const colours = new Map(palette.map(({ id, value }) => [id, value]));
+  const stops = buildColourAutomationStops(track, colours, startBeat, endBeat);
+  if (stops.length === 0) return null;
+  return (
+    <svg
+      aria-hidden="true"
+      className="scene-keyframe-automation scene-colour-automation"
+      data-testid="colour-automation"
+      preserveAspectRatio="none"
+      viewBox="0 0 100 100"
+    >
+      <defs>
+        <linearGradient colorInterpolation="sRGB" id={gradientId} x1="0" x2="1">
+          {stops.map(({ colour, offsetPercent }, index) => (
+            <stop
+              key={`${offsetPercent}-${colour}-${index}`}
+              offset={`${offsetPercent}%`}
+              stopColor={colour}
+            />
+          ))}
+        </linearGradient>
+      </defs>
+      <rect
+        className="scene-colour-automation-strip"
+        fill={`url(#${gradientId})`}
+        height="100"
+        width={`${((endBeat - startBeat) / loopLengthBeats) * 100}`}
+        x={`${(startBeat / loopLengthBeats) * 100}`}
+        y="0"
+      />
+    </svg>
+  );
+});
+
 interface KeyframeDragState {
   id: string;
   startBeat: number;
@@ -180,7 +280,7 @@ function KeyframeTrackRows({
   const playback = usePreviewPlaybackSnapshot(controller);
   const playheadBeat = Math.min(loopLengthBeats, snap(playback.positionBeats));
   const playheadInWindow =
-    playheadBeat >= layer.startBeat && playheadBeat < layer.endBeat;
+    playheadBeat >= layer.startBeat && playheadBeat <= layer.endBeat;
   const [choosingColour, setChoosingColour] = useState(false);
   const dragRef = useRef<KeyframeDragState | null>(null);
   const interaction = useRafGroupedInteraction<{
@@ -200,15 +300,15 @@ function KeyframeTrackRows({
     if (layer.locked) return;
     event.preventDefault();
     event.stopPropagation();
-    const row = event.currentTarget.closest('.scene-keyframe-property-row');
-    if (!(row instanceof HTMLElement)) return;
+    const trackElement = event.currentTarget.closest('.scene-keyframe-track');
+    if (!(trackElement instanceof HTMLElement)) return;
     event.currentTarget.setPointerCapture(event.pointerId);
     dragRef.current = {
       id,
       startBeat: beat,
       startClientX: event.clientX,
       track,
-      width: row.getBoundingClientRect().width,
+      width: trackElement.getBoundingClientRect().width,
     };
     onSelectKeyframe(track, id);
     interaction.begin();
@@ -263,9 +363,17 @@ function KeyframeTrackRows({
       onUpdateKeyframe(track, id, nextBeat);
   }
 
+  const activeBrightnessKeyframes = useMemo(
+    () =>
+      keyframesInActiveWindow(
+        layer.tracks.brightness.keyframes,
+        layer.startBeat,
+        layer.endBeat,
+      ),
+    [layer.endBeat, layer.startBeat, layer.tracks.brightness.keyframes],
+  );
   const brightnessAtPlayhead =
-    evaluateBrightnessTrack(layer.tracks.brightness.keyframes, playheadBeat) ??
-    100;
+    evaluateBrightnessTrack(activeBrightnessKeyframes, playheadBeat) ?? 100;
   const brightnessAtPlayheadKey = layer.tracks.brightness.keyframes.find(
     ({ beat }) => beat === playheadBeat,
   );
@@ -282,10 +390,11 @@ function KeyframeTrackRows({
     },
   ) {
     const cropped =
-      keyframe.beat < layer.startBeat || keyframe.beat >= layer.endBeat;
+      keyframe.beat < layer.startBeat || keyframe.beat > layer.endBeat;
+    const isLoopEnd = keyframe.beat === loopLengthBeats;
     return (
       <button
-        aria-label={`${track} keyframe at ${displayNumber(keyframe.beat)} beats`}
+        aria-label={`${track} keyframe at ${displayNumber(keyframe.beat)} beats${isLoopEnd ? ', loop end' : ''}`}
         aria-pressed={selectedKeyframeId === keyframe.id}
         className={`scene-keyframe-diamond scene-keyframe-${track} ${cropped ? 'scene-keyframe-cropped' : ''}`}
         key={keyframe.id}
@@ -299,7 +408,15 @@ function KeyframeTrackRows({
               }
             : {}),
         }}
-        title={cropped ? 'Stored outside the active window' : undefined}
+        title={
+          cropped
+            ? 'Stored outside the active window'
+            : isLoopEnd
+              ? 'Loop endpoint used for interpolation before playback wraps'
+              : keyframe.beat === layer.endBeat
+                ? 'Layer endpoint used for interpolation'
+                : undefined
+        }
         type="button"
         onClick={() => onSelectKeyframe(track, keyframe.id)}
         onKeyDown={(event) =>
@@ -351,6 +468,12 @@ function KeyframeTrackRows({
               width: `${((layer.endBeat - layer.startBeat) / loopLengthBeats) * 100}%`,
             }}
           />
+          <BrightnessAutomation
+            endBeat={layer.endBeat}
+            keyframes={layer.tracks.brightness.keyframes}
+            loopLengthBeats={loopLengthBeats}
+            startBeat={layer.startBeat}
+          />
           {layer.tracks.brightness.keyframes.map((keyframe) =>
             diamond('brightness', keyframe),
           )}
@@ -387,6 +510,13 @@ function KeyframeTrackRows({
               left: `${(layer.startBeat / loopLengthBeats) * 100}%`,
               width: `${((layer.endBeat - layer.startBeat) / loopLengthBeats) * 100}%`,
             }}
+          />
+          <ColourAutomation
+            endBeat={layer.endBeat}
+            loopLengthBeats={loopLengthBeats}
+            palette={palette}
+            startBeat={layer.startBeat}
+            track={layer.tracks.colour}
           />
           {layer.tracks.colour.keyframes.map((keyframe) =>
             diamond('colour', keyframe),
@@ -689,10 +819,17 @@ export function SceneTimeline({
                   key={index}
                   style={{ left: `${(beat / scene.loopLengthBeats) * 100}%` }}
                 >
-                  {isBeat && beat < scene.loopLengthBeats ? (
+                  {isBeat ? (
                     <span>
-                      {Math.floor(beat / timing.timeSignature.numerator) + 1}.
-                      {(beat % timing.timeSignature.numerator) + 1}
+                      {beat === scene.loopLengthBeats ? (
+                        'End'
+                      ) : (
+                        <>
+                          {Math.floor(beat / timing.timeSignature.numerator) +
+                            1}
+                          .{(beat % timing.timeSignature.numerator) + 1}
+                        </>
+                      )}
                     </span>
                   ) : null}
                 </div>
@@ -775,7 +912,7 @@ export function SceneTimeline({
                       ].map((keyframe) => {
                         const cropped =
                           keyframe.beat < layer.startBeat ||
-                          keyframe.beat >= layer.endBeat;
+                          keyframe.beat > layer.endBeat;
                         return (
                           <span
                             className={`keyframe-overview-${keyframe.track} ${cropped ? 'keyframe-overview-cropped' : ''}`}
