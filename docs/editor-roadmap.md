@@ -119,11 +119,15 @@ Implementation complete; the keyframe-authoring and hybrid-compositing review ga
 
 ### 7. Workflow and performance polish
 
-- Add keyboard shortcuts, copy/paste, context menus, stronger empty states, validation messaging, and deletion safeguards.
-- Complete accessibility behavior for focus, keyboard selection, labels, and reduced motion.
-- Profile playback and timeline rendering with realistic projects.
-- Retain SVG and React rendering unless measurements demonstrate a need for Canvas, WebGL, virtualization, or a worker.
-- Document the stable project format and editor architecture once the interaction model has passed review.
+Implementation complete; the workflow, selection, and timeline-scale review gate is open for feedback.
+
+- Add persistent manual timeline zoom, Fit Scene, and quarter-, half-, whole-beat, or bar authoring snap without changing project precision.
+- Select multiple keys within one keyframe layer across brightness and colour tracks using modifier clicks, range selection, or Select All; move and delete the selection atomically.
+- Add a session-only in-app clipboard for layers and keyframes, with relative-timing paste at the snapped playhead and strict cross-project colour, target, LED, conflict, and loop validation.
+- Add keyboard shortcuts, accessible context menus, a multi-key inspector, action feedback, lock safeguards, and reduced-motion behavior.
+- Bound timeline DOM work to the visible beat range and benchmark worst-case 512-layer duplication plus 4,096-key selection moves.
+- Retain React and SVG: viewport filtering and isolated playback subscriptions address the measured rendering risks without adding Canvas, WebGL, a worker, or a global state library.
+- Document the v2 format, session clipboard boundary, editor commands, preferences, rendering model, and deliberately deferred systems.
 
 ## Deferred work
 

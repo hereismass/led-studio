@@ -1,4 +1,9 @@
-export const WORKSPACE_LAYOUT_STORAGE_KEY = 'led-studio.workspace-layout.v1';
+export const WORKSPACE_LAYOUT_STORAGE_KEY = 'led-studio.workspace-layout.v2';
+export const LEGACY_WORKSPACE_LAYOUT_STORAGE_KEY =
+  'led-studio.workspace-layout.v1';
+
+export type TimelineSnap = 0.25 | 0.5 | 1 | 'bar';
+export type TimelineZoomMode = 'fit' | 'manual';
 
 export interface WorkspaceLayoutPreferences {
   bottomCollapsed: boolean;
@@ -7,6 +12,9 @@ export interface WorkspaceLayoutPreferences {
   leftWidth: number;
   rightCollapsed: boolean;
   rightWidth: number;
+  timelinePixelsPerBeat: number;
+  timelineSnap: TimelineSnap;
+  timelineZoomMode: TimelineZoomMode;
 }
 
 export const defaultWorkspaceLayout: WorkspaceLayoutPreferences = {
@@ -16,12 +24,16 @@ export const defaultWorkspaceLayout: WorkspaceLayoutPreferences = {
   leftWidth: 236,
   rightCollapsed: false,
   rightWidth: 272,
+  timelinePixelsPerBeat: 80,
+  timelineSnap: 0.25,
+  timelineZoomMode: 'manual',
 };
 
 const layoutBounds = {
   bottomHeight: { maximum: 420, minimum: 150 },
   leftWidth: { maximum: 380, minimum: 188 },
   rightWidth: { maximum: 420, minimum: 220 },
+  timelinePixelsPerBeat: { maximum: 320, minimum: 16 },
 } as const;
 
 const TIMELINE_BASE_CONTENT_HEIGHT = 184;
@@ -68,6 +80,12 @@ function readDimension(
     : fallback;
 }
 
+function readTimelineSnap(value: unknown): TimelineSnap {
+  return value === 0.25 || value === 0.5 || value === 1 || value === 'bar'
+    ? value
+    : defaultWorkspaceLayout.timelineSnap;
+}
+
 export function normalizeWorkspaceLayout(
   value: unknown,
 ): WorkspaceLayoutPreferences {
@@ -103,6 +121,16 @@ export function normalizeWorkspaceLayout(
       defaultWorkspaceLayout.rightWidth,
       layoutBounds.rightWidth,
     ),
+    timelinePixelsPerBeat: readDimension(
+      value.timelinePixelsPerBeat,
+      defaultWorkspaceLayout.timelinePixelsPerBeat,
+      layoutBounds.timelinePixelsPerBeat,
+    ),
+    timelineSnap: readTimelineSnap(value.timelineSnap),
+    timelineZoomMode:
+      value.timelineZoomMode === 'fit' || value.timelineZoomMode === 'manual'
+        ? value.timelineZoomMode
+        : defaultWorkspaceLayout.timelineZoomMode,
   };
 }
 
@@ -110,7 +138,9 @@ export function loadWorkspaceLayout(
   storage: Pick<Storage, 'getItem'> = window.localStorage,
 ): WorkspaceLayoutPreferences {
   try {
-    const savedLayout = storage.getItem(WORKSPACE_LAYOUT_STORAGE_KEY);
+    const savedLayout =
+      storage.getItem(WORKSPACE_LAYOUT_STORAGE_KEY) ??
+      storage.getItem(LEGACY_WORKSPACE_LAYOUT_STORAGE_KEY);
     return savedLayout
       ? normalizeWorkspaceLayout(JSON.parse(savedLayout))
       : { ...defaultWorkspaceLayout };

@@ -3,6 +3,7 @@ import type {
   ProjectGroup,
   Scene,
 } from '@led-studio/project-format';
+import type { KeyframeReference } from '@led-studio/editor-core';
 import { useEffect, useState } from 'react';
 
 export type InspectorTarget =
@@ -18,6 +19,13 @@ export type InspectorTarget =
       layerId: string;
       sceneId: string;
       track: 'brightness' | 'colour';
+    }
+  | {
+      keyframes: KeyframeReference[];
+      kind: 'keyframes';
+      layerId: string;
+      primary: KeyframeReference;
+      sceneId: string;
     };
 
 export type LedSelectionSource =
@@ -92,6 +100,38 @@ export function useWorkspaceSelection(
               ? { id: scene.id, kind: 'scene' }
               : { kind: 'project' },
         );
+      }
+    }
+    if (inspectorTarget.kind === 'keyframes') {
+      const scene = scenes.find(({ id }) => id === inspectorTarget.sceneId);
+      const layer = scene?.layers.find(
+        ({ id }) => id === inspectorTarget.layerId,
+      );
+      const valid =
+        layer?.kind === 'keyframe'
+          ? inspectorTarget.keyframes.filter((reference) =>
+              layer.tracks[reference.track].keyframes.some(
+                ({ id }) => id === reference.id,
+              ),
+            )
+          : [];
+      if (!layer || layer.kind !== 'keyframe' || valid.length === 0) {
+        setInspectorTarget(
+          layer
+            ? { id: layer.id, kind: 'layer', sceneId: inspectorTarget.sceneId }
+            : scene
+              ? { id: scene.id, kind: 'scene' }
+              : { kind: 'project' },
+        );
+      } else if (valid.length !== inspectorTarget.keyframes.length) {
+        const primary = valid.some(
+          (reference) =>
+            reference.id === inspectorTarget.primary.id &&
+            reference.track === inspectorTarget.primary.track,
+        )
+          ? inspectorTarget.primary
+          : valid.at(-1)!;
+        setInspectorTarget({ ...inspectorTarget, keyframes: valid, primary });
       }
     }
   }, [activeSceneId, groups, inspectorTarget, palette, scenes]);

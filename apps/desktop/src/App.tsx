@@ -1,10 +1,11 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import {
   nativeAppLifecycleGateway,
   type AppLifecycleGateway,
 } from './appLifecycle';
 import { ProjectLauncher } from './ProjectLauncher';
 import { ProjectWorkspace } from './ProjectWorkspace';
+import type { EditorClipboard } from './editorClipboard';
 import { WorkspaceErrorBoundary } from './WorkspaceErrorBoundary';
 import {
   nativeProjectStorageGateway,
@@ -32,6 +33,8 @@ export function App({
   });
   const { activeProject } = session.state;
   const { redo, save, undo } = session;
+  const [editorClipboard, setEditorClipboard] =
+    useState<EditorClipboard | null>(null);
 
   useEffect(() => {
     if (!activeProject) {
@@ -77,9 +80,11 @@ export function App({
           canRedo={activeProject.future.length > 0}
           canUndo={activeProject.past.length > 0}
           editorFeedback={session.state.editorFeedback}
+          editorClipboard={editorClipboard}
           operation={session.state.operation}
           onChooseAnother={() => void session.requestChooseAnother()}
           onExecuteCommand={session.executeCommand}
+          onEditorClipboardChange={setEditorClipboard}
           onRedo={session.redo}
           onSave={() => void session.save()}
           onSaveAs={() => void session.save(true)}

@@ -21,11 +21,13 @@ import type {
   Scene,
 } from '@led-studio/project-format';
 import { useEffect, useMemo, useState } from 'react';
+import type { EditorClipboard } from './editorClipboard';
 import { AssetsPanel } from './AssetsPanel';
 import { HardwarePanel } from './HardwarePanel';
 import { InspectorPanel } from './InspectorPanel';
 import { TimelinePanel } from './TimelinePanel';
 import { useScenePreview } from './useScenePreview';
+import { useWorkspaceClipboard } from './useWorkspaceClipboard';
 import { useWorkspaceLayout } from './useWorkspaceLayout';
 import { useWorkspaceSelection } from './useWorkspaceSelection';
 import { deriveWorkspaceSelection } from './workspaceSelectionModel';
@@ -42,11 +44,13 @@ interface ProjectWorkspaceProps {
   canRedo: boolean;
   canUndo: boolean;
   editorFeedback: string | null;
+  editorClipboard: EditorClipboard | null;
   onChooseAnother: () => void;
   onExecuteCommand: (
     command: EditorCommand,
     options?: ExecuteEditorCommandOptions,
   ) => EditorCommandResult;
+  onEditorClipboardChange: (clipboard: EditorClipboard) => void;
   onRedo: () => void;
   onSave: () => void;
   onSaveAs: () => void;
@@ -60,8 +64,10 @@ export function ProjectWorkspace({
   canRedo,
   canUndo,
   editorFeedback,
+  editorClipboard,
   onChooseAnother,
   onExecuteCommand,
+  onEditorClipboardChange,
   onRedo,
   onSave,
   onSaveAs,
@@ -95,6 +101,7 @@ export function ProjectWorkspace({
     selectedGroup,
     selectedKeyframe,
     selectedKeyframeLayer,
+    selectedKeyframeReferences,
     selectedKeyframeTrack,
     selectedLayer,
     selectedLeds,
@@ -122,6 +129,9 @@ export function ProjectWorkspace({
     layout,
     resetLayout,
     resizeWithKeyboard,
+    setTimelinePixelsPerBeat,
+    setTimelineSnap,
+    setTimelineZoomMode,
     togglePanel,
     workspaceStyle,
   } = useWorkspaceLayout(
@@ -133,6 +143,31 @@ export function ProjectWorkspace({
       ).length ?? 0) *
         2,
   );
+  const {
+    copyKeyframeSelection,
+    deleteKeyframeSelection,
+    duplicateKeyframeSelection,
+    feedback: workspaceFeedback,
+    onKeyframeAction,
+    onLayerAction,
+  } = useWorkspaceClipboard({
+    activeScene,
+    clipboard: editorClipboard,
+    controller: previewController,
+    onClipboardChange: onEditorClipboardChange,
+    onExecuteCommand,
+    onExpandedKeyframeLayersChange: setExpandedKeyframeLayerIds,
+    onInspectorTargetChange: setInspectorTarget,
+    onTimelinePixelsPerBeatChange: setTimelinePixelsPerBeat,
+    onTimelineZoomModeChange: setTimelineZoomMode,
+    profile,
+    project,
+    selectedKeyframeLayer,
+    selectedKeyframes: selectedKeyframeReferences,
+    selectedLayer,
+    snap: layout.timelineSnap,
+    timelinePixelsPerBeat: layout.timelinePixelsPerBeat,
+  });
 
   useEffect(() => {
     const validIds = new Set(
@@ -296,6 +331,11 @@ export function ProjectWorkspace({
           {editorFeedback}
         </div>
       ) : null}
+      {workspaceFeedback ? (
+        <div className="workspace-feedback" role="status">
+          {workspaceFeedback}
+        </div>
+      ) : null}
 
       <div className="workspace-editor">
         <AssetsPanel
@@ -387,6 +427,7 @@ export function ProjectWorkspace({
           selectedLayer={selectedLayer}
           selectedKeyframe={selectedKeyframe}
           selectedKeyframeLayer={selectedKeyframeLayer}
+          selectedKeyframeReferences={selectedKeyframeReferences}
           selectedKeyframeTrack={selectedKeyframeTrack}
           selectedScene={selectedScene}
           selectedToken={selectedToken}
@@ -458,6 +499,7 @@ export function ProjectWorkspace({
                 sceneId: activeScene.id,
               });
           }}
+          onDeleteKeyframes={() => deleteKeyframeSelection()}
           onDeleteToken={deleteSelectedToken}
           onDuplicateScene={() => {
             if (!selectedScene) return;
@@ -524,6 +566,8 @@ export function ProjectWorkspace({
                 track: selectedKeyframeTrack,
               });
           }}
+          onDuplicateKeyframes={() => duplicateKeyframeSelection()}
+          onCopyKeyframes={() => copyKeyframeSelection()}
           onMoveLayer={(toIndex) => {
             if (!selectedLayer || !activeScene) return;
             onExecuteCommand({
@@ -652,13 +696,14 @@ export function ProjectWorkspace({
           expandedKeyframeLayerIds={expandedKeyframeLayerIds}
           palette={colours}
           scene={activeScene}
-          selectedKeyframeId={
-            inspectorTarget.kind === 'keyframe' ? inspectorTarget.id : null
-          }
+          selectedKeyframes={selectedKeyframeReferences}
           selectedLayerId={
             inspectorTarget.kind === 'layer' ? inspectorTarget.id : null
           }
+          snap={layout.timelineSnap}
           timing={project.timing}
+          timelinePixelsPerBeat={layout.timelinePixelsPerBeat}
+          timelineZoomMode={layout.timelineZoomMode}
           onAddKeyframe={(layerId, beat, value) => {
             if (!activeScene) return;
             const command = createKeyframeAddedCommand(
@@ -688,6 +733,8 @@ export function ProjectWorkspace({
               type: 'scene-layer-moved',
             });
           }}
+          onKeyframeAction={onKeyframeAction}
+          onLayerAction={onLayerAction}
           onSelectLayer={(id) => {
             if (activeScene)
               setInspectorTarget({
@@ -696,15 +743,25 @@ export function ProjectWorkspace({
                 sceneId: activeScene.id,
               });
           }}
-          onSelectKeyframe={(layerId, track, id) => {
+          onSelectKeyframes={(layerId, keyframes, primary) => {
             if (!activeScene) return;
-            setInspectorTarget({
-              id,
-              kind: 'keyframe',
-              layerId,
-              sceneId: activeScene.id,
-              track,
-            });
+            setInspectorTarget(
+              keyframes.length === 1
+                ? {
+                    id: keyframes[0].id,
+                    kind: 'keyframe',
+                    layerId,
+                    sceneId: activeScene.id,
+                    track: keyframes[0].track,
+                  }
+                : {
+                    keyframes,
+                    kind: 'keyframes',
+                    layerId,
+                    primary,
+                    sceneId: activeScene.id,
+                  },
+            );
           }}
           onToggleKeyframeLayer={(id) => {
             setExpandedKeyframeLayerIds((current) =>
@@ -713,16 +770,17 @@ export function ProjectWorkspace({
                 : [...current, id],
             );
           }}
-          onUpdateKeyframe={(layerId, track, id, beat, options) => {
+          onTimelinePixelsPerBeatChange={setTimelinePixelsPerBeat}
+          onTimelineSnapChange={setTimelineSnap}
+          onTimelineZoomModeChange={setTimelineZoomMode}
+          onUpdateKeyframes={(layerId, keyframes, options) => {
             if (!activeScene) return;
             onExecuteCommand(
               {
-                changes: { beat },
-                id,
+                keyframes,
                 layerId,
                 sceneId: activeScene.id,
-                track,
-                type: 'keyframe-updated',
+                type: 'keyframes-moved',
               },
               options,
             );

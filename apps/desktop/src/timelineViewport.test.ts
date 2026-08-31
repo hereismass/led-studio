@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  calculateVisibleBeatRange,
   calculateVisibleTimelineLabels,
   MAX_VISIBLE_TIMELINE_LABELS,
+  snapTimelineBeat,
+  timelineSnapStep,
 } from './timelineViewport';
 
 describe('timeline viewport labels', () => {
@@ -33,5 +36,28 @@ describe('timeline viewport labels', () => {
       viewportWidth: Number.MAX_SAFE_INTEGER,
     });
     expect(labels).toHaveLength(MAX_VISIBLE_TIMELINE_LABELS);
+  });
+
+  it('calculates an overscanned visible beat range', () => {
+    expect(
+      calculateVisibleBeatRange(64, {
+        rulerWidth: 5252,
+        scrollLeft: 1732,
+        viewportWidth: 800,
+      }),
+    ).toEqual({ endBeat: 32, startBeat: 18 });
+    expect(
+      calculateVisibleBeatRange(4, {
+        rulerWidth: 0,
+        scrollLeft: 0,
+        viewportWidth: 0,
+      }),
+    ).toEqual({ endBeat: 4, startBeat: 0 });
+  });
+
+  it('snaps to musical subdivisions and bar boundaries', () => {
+    expect(timelineSnapStep('bar', 3)).toBe(3);
+    expect(snapTimelineBeat(1.37, 0.25, 4)).toBe(1.25);
+    expect(snapTimelineBeat(3.1, 'bar', 3)).toBe(3);
   });
 });

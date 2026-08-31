@@ -1,6 +1,7 @@
 import type {
   ExecuteEditorCommandOptions,
-  KeyframeTrackKind,
+  KeyframeMove,
+  KeyframeReference,
   KeyframeValue,
 } from '@led-studio/editor-core';
 import type {
@@ -11,6 +12,7 @@ import type {
 } from '@led-studio/project-format';
 import type { PreviewPlaybackController } from './previewPlayback';
 import { SceneTimeline } from './SceneTimeline';
+import type { TimelineSnap, TimelineZoomMode } from './workspaceLayout';
 
 interface TimelinePanelProps {
   collapsed: boolean;
@@ -20,23 +22,36 @@ interface TimelinePanelProps {
   palette: readonly PaletteToken[];
   scene: Scene | null;
   timing: ProjectTiming;
-  selectedKeyframeId: string | null;
+  selectedKeyframes: readonly KeyframeReference[];
   selectedLayerId: string | null;
+  snap: TimelineSnap;
+  timelinePixelsPerBeat: number;
+  timelineZoomMode: TimelineZoomMode;
   onAddKeyframe: (layerId: string, beat: number, value: KeyframeValue) => void;
   onAddLayer: (type: 'pulse' | 'chase' | 'keyframe') => void;
   onMoveLayer: (id: string, toIndex: number) => void;
-  onSelectKeyframe: (
+  onKeyframeAction: (
+    action: 'copy' | 'cut' | 'delete' | 'duplicate' | 'paste',
     layerId: string,
-    track: KeyframeTrackKind,
-    id: string,
+    keyframes: KeyframeReference[],
+  ) => void;
+  onLayerAction: (
+    action: 'copy' | 'cut' | 'delete' | 'duplicate' | 'paste',
+    layerId: string,
+  ) => void;
+  onSelectKeyframes: (
+    layerId: string,
+    keyframes: KeyframeReference[],
+    primary: KeyframeReference,
   ) => void;
   onSelectLayer: (id: string) => void;
   onToggleKeyframeLayer: (id: string) => void;
-  onUpdateKeyframe: (
+  onTimelinePixelsPerBeatChange: (value: number) => void;
+  onTimelineSnapChange: (value: TimelineSnap) => void;
+  onTimelineZoomModeChange: (value: TimelineZoomMode) => void;
+  onUpdateKeyframes: (
     layerId: string,
-    track: KeyframeTrackKind,
-    id: string,
-    beat: number,
+    keyframes: KeyframeMove[],
     options?: ExecuteEditorCommandOptions,
   ) => void;
   onUpdateLayer: (
@@ -55,17 +70,25 @@ export function TimelinePanel({
   palette,
   onToggle,
   scene,
-  selectedKeyframeId,
+  selectedKeyframes,
   selectedLayerId,
   timing,
   onAddKeyframe,
   onAddLayer,
   onMoveLayer,
-  onSelectKeyframe,
+  onKeyframeAction,
+  onLayerAction,
+  onSelectKeyframes,
   onSelectLayer,
   onToggleKeyframeLayer,
-  onUpdateKeyframe,
+  onTimelinePixelsPerBeatChange,
+  onTimelineSnapChange,
+  onTimelineZoomModeChange,
+  onUpdateKeyframes,
   onUpdateLayer,
+  snap,
+  timelinePixelsPerBeat,
+  timelineZoomMode,
 }: TimelinePanelProps) {
   return (
     <section
@@ -97,16 +120,24 @@ export function TimelinePanel({
               expandedKeyframeLayerIds={expandedKeyframeLayerIds}
               palette={palette}
               scene={scene}
-              selectedKeyframeId={selectedKeyframeId}
+              selectedKeyframes={selectedKeyframes}
               selectedLayerId={selectedLayerId}
+              snap={snap}
               timing={timing}
+              timelinePixelsPerBeat={timelinePixelsPerBeat}
+              timelineZoomMode={timelineZoomMode}
               onAddKeyframe={onAddKeyframe}
               onAddLayer={onAddLayer}
               onMoveLayer={onMoveLayer}
-              onSelectKeyframe={onSelectKeyframe}
+              onKeyframeAction={onKeyframeAction}
+              onLayerAction={onLayerAction}
+              onSelectKeyframes={onSelectKeyframes}
               onSelectLayer={onSelectLayer}
               onToggleKeyframeLayer={onToggleKeyframeLayer}
-              onUpdateKeyframe={onUpdateKeyframe}
+              onTimelinePixelsPerBeatChange={onTimelinePixelsPerBeatChange}
+              onTimelineSnapChange={onTimelineSnapChange}
+              onTimelineZoomModeChange={onTimelineZoomModeChange}
+              onUpdateKeyframes={onUpdateKeyframes}
               onUpdateLayer={onUpdateLayer}
             />
           ) : (

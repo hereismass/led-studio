@@ -1,5 +1,6 @@
 import type {
   ExecuteEditorCommandOptions,
+  KeyframeReference,
   KeyframeTrackKind,
   SceneLayerChanges,
 } from '@led-studio/editor-core';
@@ -21,6 +22,7 @@ import { GroupInspector } from './GroupInspector';
 import { LayerInspector } from './LayerInspector';
 import { KeyframeInspector } from './KeyframeInspector';
 import { LedSelectionInspector } from './LedSelectionInspector';
+import { MultiKeyframeInspector } from './MultiKeyframeInspector';
 import { PaletteInspector } from './PaletteInspector';
 import { SceneInspector } from './SceneInspector';
 import type { InspectorTarget } from './useWorkspaceSelection';
@@ -40,6 +42,7 @@ interface InspectorPanelProps {
   selectedLayer: SceneLayer | null;
   selectedKeyframe: BrightnessKeyframe | ColourKeyframe | null;
   selectedKeyframeLayer: KeyframeLayer | null;
+  selectedKeyframeReferences: readonly KeyframeReference[];
   selectedKeyframeTrack: KeyframeTrackKind | null;
   canDuplicateKeyframe: boolean;
   selectedScene: Scene | null;
@@ -55,11 +58,14 @@ interface InspectorPanelProps {
   onDeleteGroup: () => void;
   onDeleteLayer: () => void;
   onDeleteKeyframe: () => void;
+  onDeleteKeyframes: () => void;
   onDuplicateScene: () => void;
   onDuplicateToken: () => void;
   onDuplicateGroup: () => void;
   onDuplicateLayer: () => void;
   onDuplicateKeyframe: () => void;
+  onDuplicateKeyframes: () => void;
+  onCopyKeyframes: () => void;
   onMoveLayer: (toIndex: number) => void;
   onPaint: (paletteTokenId: string) => void;
   onToggle: () => void;
@@ -99,11 +105,14 @@ export function InspectorPanel({
   onDeleteGroup,
   onDeleteLayer,
   onDeleteKeyframe,
+  onDeleteKeyframes,
   onDeleteToken,
   onDuplicateScene,
   onDuplicateGroup,
   onDuplicateLayer,
   onDuplicateKeyframe,
+  onDuplicateKeyframes,
+  onCopyKeyframes,
   onMoveLayer,
   onDuplicateToken,
   onPaint,
@@ -126,6 +135,7 @@ export function InspectorPanel({
   selectedLayer,
   selectedKeyframe,
   selectedKeyframeLayer,
+  selectedKeyframeReferences,
   selectedKeyframeTrack,
   selectedScene,
   selectedToken,
@@ -189,6 +199,17 @@ export function InspectorPanel({
               onDuplicate={onDuplicateGroup}
               onSelectionChange={onSelectionChange}
               onUpdate={onUpdateGroup}
+            />
+          ) : inspectorTarget.kind === 'keyframes' &&
+            selectedKeyframeLayer &&
+            selectedKeyframeReferences.length > 1 ? (
+            <MultiKeyframeInspector
+              keyframes={selectedKeyframeReferences}
+              layer={selectedKeyframeLayer}
+              onBack={onBackToLayer}
+              onCopy={onCopyKeyframes}
+              onDelete={onDeleteKeyframes}
+              onDuplicate={onDuplicateKeyframes}
             />
           ) : selectedKeyframe &&
             selectedKeyframeLayer &&

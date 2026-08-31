@@ -516,9 +516,35 @@ describe('App project launcher and lifecycle', () => {
       name: 'brightness keyframe at 1 beats',
     });
     fireEvent.keyDown(secondBrightnessKey, { key: 'ArrowRight' });
+    const movedBrightnessKey = screen.getByRole('button', {
+      name: 'brightness keyframe at 1.25 beats',
+    });
+    const colourKey = screen.getByRole('button', {
+      name: 'colour keyframe at 1 beats',
+    });
+    fireEvent.click(movedBrightnessKey);
+    fireEvent.click(colourKey, { metaKey: true });
+    expect(screen.getByText('2 keyframes')).toBeInTheDocument();
+    expect(movedBrightnessKey).toHaveAttribute('aria-pressed', 'true');
+    expect(colourKey).toHaveAttribute('aria-pressed', 'true');
+
+    fireEvent.contextMenu(movedBrightnessKey, { clientX: 30, clientY: 40 });
+    expect(
+      screen.getByRole('menuitem', { name: 'Copy keyframes' }),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole('menuitem', { name: 'Copy keyframes' }));
+    expect(screen.getByText('2 keyframes copied.')).toBeInTheDocument();
+    fireEvent.change(
+      screen.getByRole('slider', { name: 'Scene preview position' }),
+      { target: { value: '2' } },
+    );
+    fireEvent.keyDown(window, { key: 'v', metaKey: true });
+    expect(
+      screen.getByRole('button', { name: 'colour keyframe at 2 beats' }),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole('button', {
-        name: 'brightness keyframe at 1.25 beats',
+        name: 'brightness keyframe at 2.25 beats',
       }),
     ).toBeInTheDocument();
 

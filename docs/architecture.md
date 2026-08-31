@@ -18,7 +18,9 @@ React owns application layout, controls, inspectors, and low-frequency state pre
 
 Text fields keep temporary drafts locally and dispatch one command when an edit is committed. Continuous sliders and native colour input preview live at most once per animation frame and share one history group. Static LED states may retain a linked colour at zero brightness; only the explicit off command removes the sparse assignment. Workspace rendering is split into panel components and hooks for layout, selection, and preview lifecycle; the project-session hook remains the mutation boundary.
 
-Workspace panel sizes, collapsed state, and keyframe-track disclosure are transient application preferences. They are deliberately separate from project data so opening a project does not change the user's editor layout. The saved timeline height is a preferred floor; its effective height grows with the active scene's visible layer and property rows up to a fixed cap, after which one vertical viewport scrolls.
+Workspace panel sizes, collapsed state, timeline zoom, and timeline snap are transient versioned application preferences. They are deliberately separate from project data so opening a project does not change the user's editor layout. The saved timeline height is a preferred floor; its effective height grows with the active scene's visible layer and property rows up to a fixed cap, after which one vertical viewport scrolls. Expanded keyframe tracks and editor selection remain workspace-session state rather than saved preferences.
+
+The editor clipboard is owned above an individual project workspace, so copied layers or keys survive switching projects during one app session. Clipboard snapshots contain no file handles and are not serialized. Cross-project paste maps linked colours by exact token ID and then exact hexadecimal value, resolves missing group targets to their concrete LED IDs, and rejects the entire command if any colour, LED, timing destination, or entity ID is invalid. Bulk move, paste, and delete commands are atomic editor-core operations and therefore create one history revision.
 
 No additional global state library is needed while a reducer and controller hook provide a clear state transition boundary.
 
@@ -28,7 +30,7 @@ No additional global state library is needed while a reducer and controller hook
 
 The desktop preview controller owns the transient clock and transport state. It advances with `requestAnimationFrame` and exposes small external-store selectors. Playback buttons subscribe only to status; static fretboards do not subscribe to position, while animated fretboards and the timeline playhead refresh each tick. Keyframe authoring subscribes to quarter-beat changes rather than every animation frame. Play, pause, stop, and seek never create project revisions. Project tempo and scene-loop edits reconfigure the running preview without restarting its phase; selecting another scene stops and resets it.
 
-The timeline renders fine grid divisions with CSS and creates text-label nodes only for the visible viewport plus a small overscan. Scroll and resize measurement is animation-frame throttled, and layer-reorder geometry is captured once at drag start.
+The timeline renders fine grid divisions with CSS and creates text-label and interactive keyframe nodes only for the visible viewport plus a small overscan. Scroll and resize measurement is animation-frame throttled, and layer-reorder geometry is captured once at drag start. Timeline zoom remains a rendering preference; persisted beats keep quarter-beat precision regardless of the active authoring snap.
 
 Animation evaluation remains independent from the rendering surface and caches repeat requests for the same position. Future effects, interpolation modes, and curve tools can extend the same centralized compositing model. Persisted preview tempo remains an editing default; any future external tempo override must remain transient runtime state.
 

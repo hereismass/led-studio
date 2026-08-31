@@ -600,6 +600,150 @@ describe('editor commands', () => {
     expectValid(project);
   });
 
+  it('moves, pastes, and deletes keyframe selections atomically', () => {
+    let project = applyEditorCommand(projectWithPalette(), {
+      id: SCENE_ID,
+      type: 'scene-added',
+    });
+    project = applyEditorCommand(
+      project,
+      createSceneLayerAddedCommand(
+        project,
+        SCENE_ID,
+        'keyframe',
+        { groupId: 'all-leds', kind: 'profile-group' },
+        ids(LAYER_ID),
+      ),
+    );
+    project = applyEditorCommand(
+      project,
+      createKeyframeAddedCommand(
+        project,
+        SCENE_ID,
+        LAYER_ID,
+        0.5,
+        { brightnessPercent: 10, track: 'brightness' },
+        ids(BRIGHTNESS_KEY_ID),
+      ),
+    );
+    project = applyEditorCommand(
+      project,
+      createKeyframeAddedCommand(
+        project,
+        SCENE_ID,
+        LAYER_ID,
+        1,
+        { brightnessPercent: 90, track: 'brightness' },
+        ids(BRIGHTNESS_KEY_2_ID),
+      ),
+    );
+    project = applyEditorCommand(
+      project,
+      createKeyframeAddedCommand(
+        project,
+        SCENE_ID,
+        LAYER_ID,
+        1,
+        { paletteTokenId: HOT_PINK_ID, track: 'colour' },
+        ids(COLOUR_KEY_ID),
+      ),
+    );
+
+    const beforeRejectedMove = project;
+    expect(() =>
+      applyEditorCommand(project, {
+        keyframes: [
+          { beat: 0.5, id: BRIGHTNESS_KEY_2_ID, track: 'brightness' },
+          { beat: 1.5, id: COLOUR_KEY_ID, track: 'colour' },
+        ],
+        layerId: LAYER_ID,
+        sceneId: SCENE_ID,
+        type: 'keyframes-moved',
+      }),
+    ).toThrow(/destination beat/);
+    expect(project).toBe(beforeRejectedMove);
+
+    project = applyEditorCommand(project, {
+      keyframes: [
+        { beat: 1.25, id: BRIGHTNESS_KEY_2_ID, track: 'brightness' },
+        { beat: 1.5, id: COLOUR_KEY_ID, track: 'colour' },
+      ],
+      layerId: LAYER_ID,
+      sceneId: SCENE_ID,
+      type: 'keyframes-moved',
+    });
+    project = applyEditorCommand(project, {
+      keyframes: [
+        {
+          beat: 2,
+          brightnessPercent: 50,
+          id: '55555555-5555-4555-8555-555555555555',
+          track: 'brightness',
+        },
+        {
+          beat: 2,
+          id: '66666666-6666-4666-8666-666666666666',
+          paletteTokenId: BLACK_ID,
+          track: 'colour',
+        },
+      ],
+      layerId: LAYER_ID,
+      sceneId: SCENE_ID,
+      type: 'keyframes-pasted',
+    });
+    project = applyEditorCommand(project, {
+      keyframes: [
+        { id: BRIGHTNESS_KEY_2_ID, track: 'brightness' },
+        { id: COLOUR_KEY_ID, track: 'colour' },
+      ],
+      layerId: LAYER_ID,
+      sceneId: SCENE_ID,
+      type: 'keyframes-deleted',
+    });
+
+    const layer = project.scenes[0].layers[0];
+    if (layer.kind !== 'keyframe') throw new Error('Expected keyframe layer');
+    expect(layer.tracks.brightness.keyframes).toMatchObject([
+      { beat: 0.5, id: BRIGHTNESS_KEY_ID },
+      { beat: 2, id: '55555555-5555-4555-8555-555555555555' },
+    ]);
+    expect(layer.tracks.colour.keyframes).toMatchObject([
+      { beat: 2, id: '66666666-6666-4666-8666-666666666666' },
+    ]);
+    expectValid(project);
+  });
+
+  it('pastes a validated layer at the requested position with a unique name', () => {
+    let project = applyEditorCommand(projectWithPalette(), {
+      id: SCENE_ID,
+      type: 'scene-added',
+    });
+    project = applyEditorCommand(
+      project,
+      createSceneLayerAddedCommand(
+        project,
+        SCENE_ID,
+        'pulse',
+        { groupId: 'all-leds', kind: 'profile-group' },
+        ids(LAYER_ID),
+      ),
+    );
+    const source = structuredClone(project.scenes[0].layers[0]);
+    source.id = LAYER_COPY_ID;
+    source.locked = true;
+    project = applyEditorCommand(project, {
+      layer: source,
+      sceneId: SCENE_ID,
+      toIndex: 0,
+      type: 'scene-layer-pasted',
+    });
+    expect(project.scenes[0].layers).toMatchObject([
+      { id: LAYER_COPY_ID, locked: false, name: 'Pulse 2' },
+      { id: LAYER_ID, name: 'Pulse' },
+    ]);
+    expectValid(project);
+  });
+
   it('duplicates project groups with deterministic IDs', () => {
     let project = applyEditorCommand(
       projectWithPalette(),

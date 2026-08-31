@@ -25,6 +25,10 @@ export interface WorkspaceSelectionModel {
   selectedKeyframe: BrightnessKeyframe | ColourKeyframe | null;
   selectedKeyframeLayer: KeyframeLayer | null;
   selectedKeyframeTrack: KeyframeTrackKind | null;
+  selectedKeyframeReferences: Array<{
+    id: string;
+    track: KeyframeTrackKind;
+  }>;
   selectedLayer: SceneLayer | null;
   selectedLeds: HardwareLed[];
   selectedScene: Scene | null;
@@ -62,7 +66,8 @@ export function deriveWorkspaceSelection(
         null)
       : null;
   const selectedKeyframeLayer =
-    inspectorTarget.kind === 'keyframe' &&
+    (inspectorTarget.kind === 'keyframe' ||
+      inspectorTarget.kind === 'keyframes') &&
     activeScene?.id === inspectorTarget.sceneId
       ? (activeScene.layers.find(
           (layer): layer is KeyframeLayer =>
@@ -70,13 +75,29 @@ export function deriveWorkspaceSelection(
         ) ?? null)
       : null;
   const selectedKeyframeTrack =
-    inspectorTarget.kind === 'keyframe' ? inspectorTarget.track : null;
+    inspectorTarget.kind === 'keyframe'
+      ? inspectorTarget.track
+      : inspectorTarget.kind === 'keyframes'
+        ? inspectorTarget.primary.track
+        : null;
   const selectedKeyframe =
-    inspectorTarget.kind === 'keyframe' && selectedKeyframeLayer
-      ? (selectedKeyframeLayer.tracks[inspectorTarget.track].keyframes.find(
-          ({ id }) => id === inspectorTarget.id,
+    (inspectorTarget.kind === 'keyframe' ||
+      inspectorTarget.kind === 'keyframes') &&
+    selectedKeyframeLayer
+      ? (selectedKeyframeLayer.tracks[selectedKeyframeTrack!].keyframes.find(
+          ({ id }) =>
+            id ===
+            (inspectorTarget.kind === 'keyframe'
+              ? inspectorTarget.id
+              : inspectorTarget.primary.id),
         ) ?? null)
       : null;
+  const selectedKeyframeReferences =
+    inspectorTarget.kind === 'keyframe'
+      ? [{ id: inspectorTarget.id, track: inspectorTarget.track }]
+      : inspectorTarget.kind === 'keyframes'
+        ? inspectorTarget.keyframes
+        : [];
   const canDuplicateKeyframe = Boolean(
     selectedKeyframeLayer &&
     selectedKeyframe &&
@@ -96,6 +117,7 @@ export function deriveWorkspaceSelection(
     selectedGroup,
     selectedKeyframe,
     selectedKeyframeLayer,
+    selectedKeyframeReferences,
     selectedKeyframeTrack,
     selectedLayer,
     selectedLeds: profile.leds.filter((led) => selectedIdSet.has(led.id)),

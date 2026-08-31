@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   defaultWorkspaceLayout,
   effectiveBottomPanelHeight,
+  LEGACY_WORKSPACE_LAYOUT_STORAGE_KEY,
   loadWorkspaceLayout,
   normalizeWorkspaceLayout,
   resizeWorkspacePanel,
@@ -35,7 +36,31 @@ describe('workspace layout preferences', () => {
       leftWidth: 188,
       rightCollapsed: false,
       rightWidth: 300,
+      timelinePixelsPerBeat: 80,
+      timelineSnap: 0.25,
+      timelineZoomMode: 'manual',
     });
+  });
+
+  it('migrates the previous layout key and normalizes new timeline settings', () => {
+    const getItem = vi.fn((key: string) =>
+      key === LEGACY_WORKSPACE_LAYOUT_STORAGE_KEY
+        ? JSON.stringify({
+            leftWidth: 300,
+            timelinePixelsPerBeat: 999,
+            timelineSnap: 'bar',
+            timelineZoomMode: 'fit',
+          })
+        : null,
+    );
+
+    expect(loadWorkspaceLayout({ getItem })).toMatchObject({
+      leftWidth: 300,
+      timelinePixelsPerBeat: 320,
+      timelineSnap: 'bar',
+      timelineZoomMode: 'fit',
+    });
+    expect(getItem).toHaveBeenCalledWith(LEGACY_WORKSPACE_LAYOUT_STORAGE_KEY);
   });
 
   it('resizes each panel in the expected direction and within its bounds', () => {

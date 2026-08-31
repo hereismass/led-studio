@@ -1,5 +1,9 @@
 import { kmsFourString10LedProfile } from '@led-studio/hardware-profiles';
-import type { Project, SceneLayer } from '@led-studio/project-format';
+import {
+  PROJECT_LIMITS,
+  type Project,
+  type SceneLayer,
+} from '@led-studio/project-format';
 import { bench, describe } from 'vitest';
 import {
   applyEditorCommand,
@@ -69,5 +73,58 @@ describe('large editor commands', () => {
   );
   bench('apply a 512-layer scene duplicate', () => {
     applyEditorCommand(project, duplicate);
+  });
+
+  const keyframeLayer: SceneLayer = {
+    enabled: true,
+    endBeat: 1024,
+    id: uuid(30_000),
+    kind: 'keyframe',
+    locked: false,
+    name: 'Dense automation',
+    startBeat: 0,
+    target: { groupId: 'all-leds', kind: 'profile-group' },
+    tracks: {
+      brightness: {
+        keyframes: Array.from(
+          { length: PROJECT_LIMITS.keyframesPerTrack },
+          (_, index) => ({
+            beat: index / 4,
+            brightnessPercent: index % 101,
+            id: uuid(50_000 + index),
+          }),
+        ),
+      },
+      colour: { interpolation: 'step', keyframes: [] },
+    },
+  };
+  const keyframeProject: Project = {
+    ...project,
+    scenes: [
+      {
+        ...project.scenes[0],
+        layers: [keyframeLayer],
+        loopLengthBeats: 1024,
+      },
+    ],
+  };
+  const moves =
+    keyframeLayer.kind === 'keyframe'
+      ? keyframeLayer.tracks.brightness.keyframes.map((keyframe, index) => ({
+          beat:
+            index === PROJECT_LIMITS.keyframesPerTrack - 1
+              ? 0
+              : keyframe.beat + 0.25,
+          id: keyframe.id,
+          track: 'brightness' as const,
+        }))
+      : [];
+  bench('move 4096 selected keyframes atomically', () => {
+    applyEditorCommand(keyframeProject, {
+      keyframes: moves,
+      layerId: keyframeLayer.id,
+      sceneId,
+      type: 'keyframes-moved',
+    });
   });
 });

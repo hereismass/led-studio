@@ -103,6 +103,19 @@ export function useWorkspaceLayout(timelineLayerCount: number) {
     layout,
     resetLayout: () => setLayout({ ...defaultWorkspaceLayout }),
     resizeWithKeyboard,
+    setTimelinePixelsPerBeat: (timelinePixelsPerBeat: number) =>
+      setLayout((current) => ({
+        ...current,
+        timelinePixelsPerBeat: Math.min(
+          320,
+          Math.max(16, timelinePixelsPerBeat),
+        ),
+        timelineZoomMode: 'manual',
+      })),
+    setTimelineSnap: (timelineSnap: typeof layout.timelineSnap) =>
+      setLayout((current) => ({ ...current, timelineSnap })),
+    setTimelineZoomMode: (timelineZoomMode: typeof layout.timelineZoomMode) =>
+      setLayout((current) => ({ ...current, timelineZoomMode })),
     togglePanel,
     workspaceStyle,
   };

@@ -2,7 +2,6 @@ import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import type { RefObject } from 'react';
 
 export const TIMELINE_LABEL_GUTTER = 132;
-export const TIMELINE_PIXELS_PER_BEAT = 80;
 export const MAX_VISIBLE_TIMELINE_LABELS = 128;
 
 export interface TimelineLabel {
@@ -11,10 +10,55 @@ export interface TimelineLabel {
   isEnd: boolean;
 }
 
-interface TimelineViewport {
+export interface TimelineViewport {
   rulerWidth: number;
   scrollLeft: number;
   viewportWidth: number;
+}
+
+export interface TimelineBeatRange {
+  endBeat: number;
+  startBeat: number;
+}
+
+export function calculateVisibleBeatRange(
+  loopLengthBeats: number,
+  viewport: TimelineViewport,
+  overscanBeats = 2,
+): TimelineBeatRange {
+  if (
+    viewport.viewportWidth <= 0 ||
+    viewport.rulerWidth <= TIMELINE_LABEL_GUTTER
+  )
+    return { endBeat: loopLengthBeats, startBeat: 0 };
+  const trackWidth = Math.max(1, viewport.rulerWidth - TIMELINE_LABEL_GUTTER);
+  const startBeat =
+    ((viewport.scrollLeft - TIMELINE_LABEL_GUTTER) / trackWidth) *
+    loopLengthBeats;
+  const endBeat =
+    ((viewport.scrollLeft + viewport.viewportWidth - TIMELINE_LABEL_GUTTER) /
+      trackWidth) *
+    loopLengthBeats;
+  return {
+    endBeat: Math.min(loopLengthBeats, endBeat + overscanBeats),
+    startBeat: Math.max(0, startBeat - overscanBeats),
+  };
+}
+
+export function timelineSnapStep(
+  snap: 0.25 | 0.5 | 1 | 'bar',
+  numerator: number,
+): number {
+  return snap === 'bar' ? numerator : snap;
+}
+
+export function snapTimelineBeat(
+  beat: number,
+  snap: 0.25 | 0.5 | 1 | 'bar',
+  numerator: number,
+): number {
+  const step = timelineSnapStep(snap, numerator);
+  return Math.round(beat / step) * step;
 }
 
 export function calculateVisibleTimelineLabels(
@@ -22,20 +66,9 @@ export function calculateVisibleTimelineLabels(
   numerator: number,
   viewport: TimelineViewport,
 ): TimelineLabel[] {
-  const trackWidth = Math.max(1, viewport.rulerWidth - TIMELINE_LABEL_GUTTER);
-  const viewportStart = Math.max(
-    0,
-    ((viewport.scrollLeft - TIMELINE_LABEL_GUTTER) / trackWidth) *
-      loopLengthBeats,
-  );
-  const viewportEnd = Math.min(
-    loopLengthBeats,
-    ((viewport.scrollLeft + viewport.viewportWidth - TIMELINE_LABEL_GUTTER) /
-      trackWidth) *
-      loopLengthBeats,
-  );
-  const firstBeat = Math.max(0, Math.floor(viewportStart) - 2);
-  const lastBeat = Math.min(loopLengthBeats, Math.ceil(viewportEnd) + 2);
+  const range = calculateVisibleBeatRange(loopLengthBeats, viewport);
+  const firstBeat = Math.max(0, Math.floor(range.startBeat));
+  const lastBeat = Math.min(loopLengthBeats, Math.ceil(range.endBeat));
   const labels: TimelineLabel[] = [];
 
   for (

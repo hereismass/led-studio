@@ -1,5 +1,7 @@
 import type {
   ExecuteEditorCommandOptions,
+  KeyframeMove,
+  KeyframeReference,
   KeyframeTrackKind,
   KeyframeValue,
 } from '@led-studio/editor-core';
@@ -25,9 +27,11 @@ import {
   useState,
   type CSSProperties,
   type KeyboardEvent,
+  type MouseEvent,
   type PointerEvent,
 } from 'react';
 import { ChoiceMenu } from './ChoiceMenu';
+import { ContextMenu, type ContextMenuItem } from './ContextMenu';
 import {
   buildBrightnessAutomationPoints,
   buildColourAutomationStops,
@@ -40,10 +44,14 @@ import {
 } from './usePreviewPlaybackSnapshot';
 import { useRafGroupedInteraction } from './useRafGroupedInteraction';
 import {
+  calculateVisibleBeatRange,
   calculateVisibleTimelineLabels,
-  TIMELINE_PIXELS_PER_BEAT,
+  snapTimelineBeat,
+  timelineSnapStep,
+  TIMELINE_LABEL_GUTTER,
   useTimelineViewport,
 } from './timelineViewport';
+import type { TimelineSnap, TimelineZoomMode } from './workspaceLayout';
 
 interface SceneTimelineProps {
   canAddEffect: boolean;
@@ -51,24 +59,37 @@ interface SceneTimelineProps {
   expandedKeyframeLayerIds: string[];
   palette: readonly PaletteToken[];
   scene: Scene;
-  selectedKeyframeId: string | null;
+  selectedKeyframes: readonly KeyframeReference[];
   selectedLayerId: string | null;
+  snap: TimelineSnap;
   timing: ProjectTiming;
+  timelinePixelsPerBeat: number;
+  timelineZoomMode: TimelineZoomMode;
   onAddKeyframe: (layerId: string, beat: number, value: KeyframeValue) => void;
   onAddLayer: (type: 'pulse' | 'chase' | 'keyframe') => void;
   onMoveLayer: (id: string, toIndex: number) => void;
-  onSelectKeyframe: (
+  onKeyframeAction: (
+    action: 'copy' | 'cut' | 'delete' | 'duplicate' | 'paste',
     layerId: string,
-    track: KeyframeTrackKind,
-    id: string,
+    keyframes: KeyframeReference[],
+  ) => void;
+  onLayerAction: (
+    action: 'copy' | 'cut' | 'delete' | 'duplicate' | 'paste',
+    layerId: string,
+  ) => void;
+  onSelectKeyframes: (
+    layerId: string,
+    keyframes: KeyframeReference[],
+    primary: KeyframeReference,
   ) => void;
   onSelectLayer: (id: string) => void;
   onToggleKeyframeLayer: (id: string) => void;
-  onUpdateKeyframe: (
+  onTimelinePixelsPerBeatChange: (value: number) => void;
+  onTimelineSnapChange: (value: TimelineSnap) => void;
+  onTimelineZoomModeChange: (value: TimelineZoomMode) => void;
+  onUpdateKeyframes: (
     layerId: string,
-    track: KeyframeTrackKind,
-    id: string,
-    beat: number,
+    keyframes: KeyframeMove[],
     options?: ExecuteEditorCommandOptions,
   ) => void;
   onUpdateLayer: (
@@ -163,9 +184,6 @@ interface ReorderDragState {
   rowMidpoints: number[];
   startIndex: number;
 }
-function snap(value: number): number {
-  return Math.round(value * 4) / 4;
-}
 
 const BrightnessAutomation = memo(function BrightnessAutomation({
   endBeat,
@@ -256,11 +274,25 @@ const ColourAutomation = memo(function ColourAutomation({
 });
 
 interface KeyframeDragState {
-  id: string;
-  startBeat: number;
+  keyframes: Array<KeyframeReference & { startBeat: number }>;
   startClientX: number;
-  track: KeyframeTrackKind;
   width: number;
+}
+
+function keyframesAroundVisibleRange<T extends { beat: number }>(
+  keyframes: readonly T[],
+  startBeat: number,
+  endBeat: number,
+): T[] {
+  if (keyframes.length <= 2) return [...keyframes];
+  const firstVisible = keyframes.findIndex(({ beat }) => beat >= startBeat);
+  if (firstVisible < 0) return [keyframes.at(-1)!];
+  const first = Math.max(0, firstVisible - 1);
+  const firstAfter = keyframes.findIndex(
+    ({ beat }, index) => index >= firstVisible && beat > endBeat,
+  );
+  const end = firstAfter < 0 ? keyframes.length : firstAfter + 1;
+  return keyframes.slice(first, end);
 }
 
 function KeyframeTrackRows({
@@ -268,40 +300,92 @@ function KeyframeTrackRows({
   layer,
   loopLengthBeats,
   onAddKeyframe,
-  onSelectKeyframe,
-  onUpdateKeyframe,
+  onSelectKeyframes,
+  onOpenContextMenu,
+  onUpdateKeyframes,
   palette,
-  selectedKeyframeId,
+  snap,
+  timeSignatureNumerator,
+  selectedKeyframes,
+  visibleBeatRange,
 }: {
   controller: PreviewPlaybackController;
   layer: KeyframeLayer;
   loopLengthBeats: number;
   palette: readonly PaletteToken[];
-  selectedKeyframeId: string | null;
+  snap: TimelineSnap;
+  timeSignatureNumerator: number;
+  selectedKeyframes: readonly KeyframeReference[];
+  visibleBeatRange: { endBeat: number; startBeat: number };
   onAddKeyframe: (beat: number, value: KeyframeValue) => void;
-  onSelectKeyframe: (track: KeyframeTrackKind, id: string) => void;
-  onUpdateKeyframe: (
-    track: KeyframeTrackKind,
-    id: string,
-    beat: number,
+  onSelectKeyframes: (
+    keyframes: KeyframeReference[],
+    primary: KeyframeReference,
+  ) => void;
+  onOpenContextMenu: (
+    event: MouseEvent<HTMLButtonElement>,
+    keyframes: KeyframeReference[],
+  ) => void;
+  onUpdateKeyframes: (
+    keyframes: KeyframeMove[],
     options?: ExecuteEditorCommandOptions,
   ) => void;
 }) {
   const playheadBeat = Math.min(
     loopLengthBeats,
-    usePreviewPlaybackQuarterBeat(controller),
+    snapTimelineBeat(
+      usePreviewPlaybackQuarterBeat(controller),
+      snap,
+      timeSignatureNumerator,
+    ),
   );
   const playheadInWindow =
     playheadBeat >= layer.startBeat && playheadBeat <= layer.endBeat;
   const [choosingColour, setChoosingColour] = useState(false);
   const dragRef = useRef<KeyframeDragState | null>(null);
-  const interaction = useRafGroupedInteraction<{
-    beat: number;
-    id: string;
-    track: KeyframeTrackKind;
-  }>((value, options) =>
-    onUpdateKeyframe(value.track, value.id, value.beat, options),
-  );
+  const interaction =
+    useRafGroupedInteraction<KeyframeMove[]>(onUpdateKeyframes);
+
+  function keyframeBeat(reference: KeyframeReference): number | null {
+    return (
+      layer.tracks[reference.track].keyframes.find(
+        ({ id }) => id === reference.id,
+      )?.beat ?? null
+    );
+  }
+
+  function selectionForClick(
+    event: Pick<MouseEvent | PointerEvent, 'ctrlKey' | 'metaKey' | 'shiftKey'>,
+    track: KeyframeTrackKind,
+    id: string,
+    beat: number,
+  ): KeyframeReference[] {
+    const clicked = { id, track };
+    if (event.metaKey || event.ctrlKey) {
+      const exists = selectedKeyframes.some(
+        (reference) => reference.id === id && reference.track === track,
+      );
+      const next = exists
+        ? selectedKeyframes.filter(
+            (reference) => reference.id !== id || reference.track !== track,
+          )
+        : [...selectedKeyframes, clicked];
+      return next.length > 0 ? next : [clicked];
+    }
+    if (event.shiftKey) {
+      const anchor = selectedKeyframes.at(-1);
+      const anchorBeat = anchor?.track === track ? keyframeBeat(anchor) : null;
+      if (anchorBeat !== null)
+        return layer.tracks[track].keyframes
+          .filter(
+            (keyframe) =>
+              keyframe.beat >= Math.min(anchorBeat, beat) &&
+              keyframe.beat <= Math.max(anchorBeat, beat),
+          )
+          .map((keyframe) => ({ id: keyframe.id, track }));
+    }
+    return [clicked];
+  }
 
   function beginKeyframeDrag(
     event: PointerEvent<HTMLButtonElement>,
@@ -315,35 +399,55 @@ function KeyframeTrackRows({
     const trackElement = event.currentTarget.closest('.scene-keyframe-track');
     if (!(trackElement instanceof HTMLElement)) return;
     event.currentTarget.setPointerCapture(event.pointerId);
+    const selected = selectionForClick(event, track, id, beat);
+    onSelectKeyframes(selected, { id, track });
     dragRef.current = {
-      id,
-      startBeat: beat,
+      keyframes: selected.map((reference) => ({
+        ...reference,
+        startBeat: keyframeBeat(reference)!,
+      })),
       startClientX: event.clientX,
-      track,
       width: trackElement.getBoundingClientRect().width,
     };
-    onSelectKeyframe(track, id);
     interaction.begin();
   }
 
   function moveKeyframeDrag(event: PointerEvent<HTMLButtonElement>) {
     const drag = dragRef.current;
     if (!drag) return;
-    const beat = Math.max(
-      0,
-      Math.min(
-        loopLengthBeats,
-        snap(
-          drag.startBeat +
-            ((event.clientX - drag.startClientX) / drag.width) *
-              loopLengthBeats,
-        ),
+    const rawDelta =
+      ((event.clientX - drag.startClientX) / drag.width) * loopLengthBeats;
+    const snappedDelta = snapTimelineBeat(
+      rawDelta,
+      snap,
+      timeSignatureNumerator,
+    );
+    const minimumBeat = Math.min(
+      ...drag.keyframes.map(({ startBeat }) => startBeat),
+    );
+    const maximumBeat = Math.max(
+      ...drag.keyframes.map(({ startBeat }) => startBeat),
+    );
+    const delta = Math.max(
+      -minimumBeat,
+      Math.min(loopLengthBeats - maximumBeat, snappedDelta),
+    );
+    const moves = drag.keyframes.map(({ id, startBeat, track }) => ({
+      beat: startBeat + delta,
+      id,
+      track,
+    }));
+    const selectedIds = new Set(
+      drag.keyframes.map(({ id, track }) => `${track}:${id}`),
+    );
+    const occupied = moves.some((move) =>
+      layer.tracks[move.track].keyframes.some(
+        (keyframe) =>
+          !selectedIds.has(`${move.track}:${keyframe.id}`) &&
+          keyframe.beat === move.beat,
       ),
     );
-    const occupied = layer.tracks[drag.track].keyframes.some(
-      (keyframe) => keyframe.id !== drag.id && keyframe.beat === beat,
-    );
-    if (!occupied) interaction.update({ beat, id: drag.id, track: drag.track });
+    if (!occupied) interaction.update(moves);
   }
 
   function endKeyframeDrag() {
@@ -356,7 +460,6 @@ function KeyframeTrackRows({
     event: KeyboardEvent<HTMLButtonElement>,
     track: KeyframeTrackKind,
     id: string,
-    beat: number,
   ) {
     if (
       layer.locked ||
@@ -364,15 +467,35 @@ function KeyframeTrackRows({
     )
       return;
     event.preventDefault();
-    const delta =
-      (event.shiftKey ? 1 : 0.25) * (event.key === 'ArrowLeft' ? -1 : 1);
-    const nextBeat = Math.max(0, Math.min(loopLengthBeats, beat + delta));
-    if (
-      !layer.tracks[track].keyframes.some(
-        (keyframe) => keyframe.id !== id && keyframe.beat === nextBeat,
-      )
+    const baseStep = event.altKey
+      ? 0.25
+      : event.shiftKey
+        ? snap === 0.25 || snap === 0.5
+          ? 1
+          : timeSignatureNumerator
+        : timelineSnapStep(snap, timeSignatureNumerator);
+    const delta = baseStep * (event.key === 'ArrowLeft' ? -1 : 1);
+    const activeSelection = selectedKeyframes.some(
+      (reference) => reference.id === id && reference.track === track,
     )
-      onUpdateKeyframe(track, id, nextBeat);
+      ? selectedKeyframes
+      : [{ id, track }];
+    const beats = activeSelection.map((reference) => ({
+      ...reference,
+      beat: keyframeBeat(reference)!,
+    }));
+    const minimum = Math.min(...beats.map((keyframe) => keyframe.beat));
+    const maximum = Math.max(...beats.map((keyframe) => keyframe.beat));
+    const boundedDelta = Math.max(
+      -minimum,
+      Math.min(loopLengthBeats - maximum, delta),
+    );
+    onUpdateKeyframes(
+      beats.map((keyframe) => ({
+        ...keyframe,
+        beat: keyframe.beat + boundedDelta,
+      })),
+    );
   }
 
   const activeBrightnessKeyframes = useMemo(
@@ -383,6 +506,30 @@ function KeyframeTrackRows({
         layer.endBeat,
       ),
     [layer.endBeat, layer.startBeat, layer.tracks.brightness.keyframes],
+  );
+  const visibleBrightnessKeyframes = useMemo(
+    () =>
+      keyframesAroundVisibleRange(
+        activeBrightnessKeyframes,
+        visibleBeatRange.startBeat,
+        visibleBeatRange.endBeat,
+      ),
+    [activeBrightnessKeyframes, visibleBeatRange],
+  );
+  const visibleColourTrack = useMemo(
+    () => ({
+      ...layer.tracks.colour,
+      keyframes: keyframesAroundVisibleRange(
+        keyframesInActiveWindow(
+          layer.tracks.colour.keyframes,
+          layer.startBeat,
+          layer.endBeat,
+        ),
+        visibleBeatRange.startBeat,
+        visibleBeatRange.endBeat,
+      ),
+    }),
+    [layer.endBeat, layer.startBeat, layer.tracks.colour, visibleBeatRange],
   );
   const brightnessAtPlayhead =
     evaluateBrightnessTrack(activeBrightnessKeyframes, playheadBeat) ?? 100;
@@ -407,7 +554,10 @@ function KeyframeTrackRows({
     return (
       <button
         aria-label={`${track} keyframe at ${displayNumber(keyframe.beat)} beats${isLoopEnd ? ', loop end' : ''}`}
-        aria-pressed={selectedKeyframeId === keyframe.id}
+        aria-pressed={selectedKeyframes.some(
+          (reference) =>
+            reference.id === keyframe.id && reference.track === track,
+        )}
         className={`scene-keyframe-diamond scene-keyframe-${track} ${cropped ? 'scene-keyframe-cropped' : ''}`}
         key={keyframe.id}
         style={{
@@ -430,10 +580,36 @@ function KeyframeTrackRows({
                 : undefined
         }
         type="button"
-        onClick={() => onSelectKeyframe(track, keyframe.id)}
-        onKeyDown={(event) =>
-          handleKeyframeKey(event, track, keyframe.id, keyframe.beat)
-        }
+        onClick={(event) => {
+          if (event.detail !== 0) return;
+          if (
+            !event.metaKey &&
+            !event.ctrlKey &&
+            !event.shiftKey &&
+            selectedKeyframes.length > 1 &&
+            selectedKeyframes.some(
+              (reference) =>
+                reference.id === keyframe.id && reference.track === track,
+            )
+          )
+            return;
+          onSelectKeyframes(
+            selectionForClick(event, track, keyframe.id, keyframe.beat),
+            { id: keyframe.id, track },
+          );
+        }}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          const selection = selectedKeyframes.some(
+            (reference) =>
+              reference.id === keyframe.id && reference.track === track,
+          )
+            ? [...selectedKeyframes]
+            : selectionForClick(event, track, keyframe.id, keyframe.beat);
+          onSelectKeyframes(selection, { id: keyframe.id, track });
+          onOpenContextMenu(event, selection);
+        }}
+        onKeyDown={(event) => handleKeyframeKey(event, track, keyframe.id)}
         onPointerCancel={endKeyframeDrag}
         onPointerDown={(event) =>
           beginKeyframeDrag(event, track, keyframe.id, keyframe.beat)
@@ -460,7 +636,10 @@ function KeyframeTrackRows({
             }
             onClick={() => {
               if (brightnessAtPlayheadKey)
-                onSelectKeyframe('brightness', brightnessAtPlayheadKey.id);
+                onSelectKeyframes(
+                  [{ id: brightnessAtPlayheadKey.id, track: 'brightness' }],
+                  { id: brightnessAtPlayheadKey.id, track: 'brightness' },
+                );
               else
                 onAddKeyframe(playheadBeat, {
                   brightnessPercent: Math.round(brightnessAtPlayhead),
@@ -482,13 +661,17 @@ function KeyframeTrackRows({
           />
           <BrightnessAutomation
             endBeat={layer.endBeat}
-            keyframes={layer.tracks.brightness.keyframes}
+            keyframes={visibleBrightnessKeyframes}
             loopLengthBeats={loopLengthBeats}
             startBeat={layer.startBeat}
           />
-          {layer.tracks.brightness.keyframes.map((keyframe) =>
-            diamond('brightness', keyframe),
-          )}
+          {layer.tracks.brightness.keyframes
+            .filter(
+              ({ beat }) =>
+                beat >= visibleBeatRange.startBeat &&
+                beat <= visibleBeatRange.endBeat,
+            )
+            .map((keyframe) => diamond('brightness', keyframe))}
         </div>
       </div>
       <div className="scene-track-row scene-keyframe-property-row">
@@ -507,7 +690,10 @@ function KeyframeTrackRows({
             }
             onClick={() => {
               if (colourAtPlayheadKey)
-                onSelectKeyframe('colour', colourAtPlayheadKey.id);
+                onSelectKeyframes(
+                  [{ id: colourAtPlayheadKey.id, track: 'colour' }],
+                  { id: colourAtPlayheadKey.id, track: 'colour' },
+                );
               else setChoosingColour((current) => !current);
             }}
           >
@@ -528,11 +714,15 @@ function KeyframeTrackRows({
             loopLengthBeats={loopLengthBeats}
             palette={palette}
             startBeat={layer.startBeat}
-            track={layer.tracks.colour}
+            track={visibleColourTrack}
           />
-          {layer.tracks.colour.keyframes.map((keyframe) =>
-            diamond('colour', keyframe),
-          )}
+          {layer.tracks.colour.keyframes
+            .filter(
+              ({ beat }) =>
+                beat >= visibleBeatRange.startBeat &&
+                beat <= visibleBeatRange.endBeat,
+            )
+            .map((keyframe) => diamond('colour', keyframe))}
           {choosingColour ? (
             <div className="scene-keyframe-colour-picker">
               <span>Colour at {displayNumber(playheadBeat)} beats</span>
@@ -565,16 +755,24 @@ export function SceneTimeline({
   onAddKeyframe,
   onAddLayer,
   onMoveLayer,
-  onSelectKeyframe,
+  onKeyframeAction,
+  onLayerAction,
+  onSelectKeyframes,
   onSelectLayer,
   onToggleKeyframeLayer,
-  onUpdateKeyframe,
+  onTimelinePixelsPerBeatChange,
+  onTimelineSnapChange,
+  onTimelineZoomModeChange,
+  onUpdateKeyframes,
   onUpdateLayer,
   palette,
   scene,
-  selectedKeyframeId,
+  selectedKeyframes,
   selectedLayerId,
+  snap,
   timing,
+  timelinePixelsPerBeat,
+  timelineZoomMode,
 }: SceneTimelineProps) {
   const dragRef = useRef<DragState | null>(null);
   const reorderRef = useRef<ReorderDragState | null>(null);
@@ -582,6 +780,20 @@ export function SceneTimeline({
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [draggingLayerId, setDraggingLayerId] = useState<string | null>(null);
   const [dropSlot, setDropSlot] = useState<number | null>(null);
+  const [contextMenu, setContextMenu] = useState<
+    | {
+        keyframes: KeyframeReference[];
+        kind: 'keyframes';
+        layerId: string;
+        point: { x: number; y: number };
+      }
+    | {
+        kind: 'layer';
+        layerId: string;
+        point: { x: number; y: number };
+      }
+    | null
+  >(null);
   const interaction = useRafGroupedInteraction<{
     endBeat: number;
     id: string;
@@ -594,11 +806,91 @@ export function SceneTimeline({
     ),
   );
   const subdivisions = Math.ceil(scene.loopLengthBeats * 4);
-  const minimumWidth = Math.max(
-    480,
-    scene.loopLengthBeats * TIMELINE_PIXELS_PER_BEAT,
-  );
+  const minimumWidth =
+    timelineZoomMode === 'fit'
+      ? 480
+      : Math.max(
+          480,
+          TIMELINE_LABEL_GUTTER + scene.loopLengthBeats * timelinePixelsPerBeat,
+        );
   const barCount = scene.loopLengthBeats / timing.timeSignature.numerator;
+  const contextLayer = contextMenu
+    ? scene.layers.find(({ id }) => id === contextMenu.layerId)
+    : null;
+  const contextItems: ContextMenuItem[] = contextMenu
+    ? contextMenu.kind === 'keyframes'
+      ? [
+          {
+            label: 'Copy keyframes',
+            onSelect: () =>
+              onKeyframeAction(
+                'copy',
+                contextMenu.layerId,
+                contextMenu.keyframes,
+              ),
+          },
+          {
+            disabled: contextLayer?.locked,
+            label: 'Cut keyframes',
+            onSelect: () =>
+              onKeyframeAction(
+                'cut',
+                contextMenu.layerId,
+                contextMenu.keyframes,
+              ),
+          },
+          {
+            disabled: contextLayer?.locked,
+            label: 'Paste at playhead',
+            onSelect: () => onKeyframeAction('paste', contextMenu.layerId, []),
+          },
+          {
+            disabled: contextLayer?.locked,
+            label: 'Duplicate keyframes',
+            onSelect: () =>
+              onKeyframeAction(
+                'duplicate',
+                contextMenu.layerId,
+                contextMenu.keyframes,
+              ),
+          },
+          {
+            disabled: contextLayer?.locked,
+            label: 'Delete keyframes',
+            onSelect: () =>
+              onKeyframeAction(
+                'delete',
+                contextMenu.layerId,
+                contextMenu.keyframes,
+              ),
+          },
+        ]
+      : [
+          {
+            label: 'Copy layer',
+            onSelect: () => onLayerAction('copy', contextMenu.layerId),
+          },
+          {
+            disabled: contextLayer?.locked,
+            label: 'Cut layer',
+            onSelect: () => onLayerAction('cut', contextMenu.layerId),
+          },
+          {
+            label: 'Paste after layer',
+            onSelect: () => onLayerAction('paste', contextMenu.layerId),
+          },
+          {
+            disabled: contextLayer?.locked,
+            label: 'Duplicate layer',
+            onSelect: () => onLayerAction('duplicate', contextMenu.layerId),
+          },
+          {
+            disabled: contextLayer?.locked,
+            label: 'Delete layer',
+            onSelect: () => onLayerAction('delete', contextMenu.layerId),
+          },
+        ]
+    : [];
   const viewport = useTimelineViewport(scrollRef, rulerRef);
   const visibleLabels = useMemo(
     () =>
@@ -608,6 +900,10 @@ export function SceneTimeline({
         viewport,
       ),
     [scene.loopLengthBeats, timing.timeSignature.numerator, viewport],
+  );
+  const visibleBeatRange = useMemo(
+    () => calculateVisibleBeatRange(scene.loopLengthBeats, viewport),
+    [scene.loopLengthBeats, viewport],
   );
 
   function dropIndicatorTop(slot: number): number {
@@ -632,18 +928,39 @@ export function SceneTimeline({
       const duration = endBeat - startBeat;
       startBeat = Math.max(
         0,
-        Math.min(scene.loopLengthBeats - duration, snap(startBeat + delta)),
+        Math.min(
+          scene.loopLengthBeats - duration,
+          snapTimelineBeat(
+            startBeat + delta,
+            snap,
+            timing.timeSignature.numerator,
+          ),
+        ),
       );
       endBeat = startBeat + duration;
     } else if (drag.mode === 'start') {
       startBeat = Math.max(
         0,
-        Math.min(endBeat - 0.25, snap(startBeat + delta)),
+        Math.min(
+          endBeat - 0.25,
+          snapTimelineBeat(
+            startBeat + delta,
+            snap,
+            timing.timeSignature.numerator,
+          ),
+        ),
       );
     } else {
       endBeat = Math.max(
         startBeat + 0.25,
-        Math.min(scene.loopLengthBeats, snap(endBeat + delta)),
+        Math.min(
+          scene.loopLengthBeats,
+          snapTimelineBeat(
+            endBeat + delta,
+            snap,
+            timing.timeSignature.numerator,
+          ),
+        ),
       );
     }
     return { endBeat, id: drag.id, startBeat };
@@ -675,9 +992,11 @@ export function SceneTimeline({
   function moveDrag(event: PointerEvent<HTMLElement>) {
     const drag = dragRef.current;
     if (!drag) return;
-    const delta = snap(
+    const delta = snapTimelineBeat(
       ((event.clientX - drag.startClientX) / drag.width) *
         scene.loopLengthBeats,
+      snap,
+      timing.timeSignature.numerator,
     );
     interaction.update(valuesForDrag(drag, delta));
   }
@@ -700,8 +1019,14 @@ export function SceneTimeline({
       return;
     event.preventDefault();
     event.stopPropagation();
-    const delta =
-      (event.shiftKey ? 1 : 0.25) * (event.key === 'ArrowLeft' ? -1 : 1);
+    const baseStep = event.altKey
+      ? 0.25
+      : event.shiftKey
+        ? snap === 0.25 || snap === 0.5
+          ? 1
+          : timing.timeSignature.numerator
+        : timelineSnapStep(snap, timing.timeSignature.numerator);
+    const delta = baseStep * (event.key === 'ArrowLeft' ? -1 : 1);
     onUpdateLayer(
       layer.id,
       valuesForDrag(
@@ -797,6 +1122,45 @@ export function SceneTimeline({
     onMoveLayer(layer.id, index + offset);
   }
 
+  function changeZoom(multiplier: number) {
+    const scroll = scrollRef.current;
+    const ruler = rulerRef.current;
+    const effectiveScale =
+      timelineZoomMode === 'fit' && scroll
+        ? Math.max(
+            16,
+            (scroll.clientWidth - TIMELINE_LABEL_GUTTER) /
+              scene.loopLengthBeats,
+          )
+        : timelinePixelsPerBeat;
+    const next = Math.min(320, Math.max(16, effectiveScale * multiplier));
+    const centreBeat =
+      scroll && ruler
+        ? ((scroll.scrollLeft +
+            scroll.clientWidth / 2 -
+            TIMELINE_LABEL_GUTTER) /
+            Math.max(1, ruler.clientWidth - TIMELINE_LABEL_GUTTER)) *
+          scene.loopLengthBeats
+        : 0;
+    onTimelinePixelsPerBeatChange(next);
+    requestAnimationFrame(() => {
+      if (!scrollRef.current) return;
+      scrollRef.current.scrollLeft = Math.max(
+        0,
+        TIMELINE_LABEL_GUTTER +
+          centreBeat * next -
+          scrollRef.current.clientWidth / 2,
+      );
+    });
+  }
+
+  function fitScene() {
+    onTimelineZoomModeChange('fit');
+    requestAnimationFrame(() => {
+      if (scrollRef.current) scrollRef.current.scrollLeft = 0;
+    });
+  }
+
   return (
     <div className="scene-timeline">
       <div className="scene-timeline-summary">
@@ -832,6 +1196,46 @@ export function SceneTimeline({
               onAddLayer(type);
           }}
         />
+        <div className="timeline-authoring-controls">
+          <ChoiceMenu
+            ariaLabel="Timeline snap"
+            options={[
+              { label: '¼ beat', value: '0.25' },
+              { label: '½ beat', value: '0.5' },
+              { label: '1 beat', value: '1' },
+              { label: '1 bar', value: 'bar' },
+            ]}
+            value={String(snap)}
+            onChange={(value) =>
+              onTimelineSnapChange(
+                value === 'bar' ? 'bar' : (Number(value) as 0.25 | 0.5 | 1),
+              )
+            }
+          />
+          <div className="timeline-zoom-controls" aria-label="Timeline zoom">
+            <button
+              aria-label="Zoom timeline out"
+              type="button"
+              onClick={() => changeZoom(0.8)}
+            >
+              −
+            </button>
+            <button
+              type="button"
+              aria-pressed={timelineZoomMode === 'fit'}
+              onClick={fitScene}
+            >
+              Fit
+            </button>
+            <button
+              aria-label="Zoom timeline in"
+              type="button"
+              onClick={() => changeZoom(1.25)}
+            >
+              +
+            </button>
+          </div>
+        </div>
         <ScenePlaybackPosition
           controller={controller}
           loopLengthBeats={scene.loopLengthBeats}
@@ -924,6 +1328,15 @@ export function SceneTimeline({
                       aria-label={layer.name}
                       aria-pressed={selectedLayerId === layer.id}
                       onClick={() => onSelectLayer(layer.id)}
+                      onContextMenu={(event) => {
+                        event.preventDefault();
+                        onSelectLayer(layer.id);
+                        setContextMenu({
+                          kind: 'layer',
+                          layerId: layer.id,
+                          point: { x: event.clientX, y: event.clientY },
+                        });
+                      }}
                     >
                       {layer.locked ? (
                         <span aria-hidden="true">🔒 </span>
@@ -944,28 +1357,34 @@ export function SceneTimeline({
                           ...keyframe,
                           track: 'colour' as const,
                         })),
-                      ].map((keyframe) => {
-                        const cropped =
-                          keyframe.beat < layer.startBeat ||
-                          keyframe.beat > layer.endBeat;
-                        return (
-                          <span
-                            className={`keyframe-overview-${keyframe.track} ${cropped ? 'keyframe-overview-cropped' : ''}`}
-                            key={keyframe.id}
-                            style={{
-                              left: `${(keyframe.beat / scene.loopLengthBeats) * 100}%`,
-                              ...('paletteTokenId' in keyframe
-                                ? {
-                                    backgroundColor: palette.find(
-                                      ({ id }) =>
-                                        id === keyframe.paletteTokenId,
-                                    )?.value,
-                                  }
-                                : {}),
-                            }}
-                          />
-                        );
-                      })}
+                      ]
+                        .filter(
+                          ({ beat }) =>
+                            beat >= visibleBeatRange.startBeat &&
+                            beat <= visibleBeatRange.endBeat,
+                        )
+                        .map((keyframe) => {
+                          const cropped =
+                            keyframe.beat < layer.startBeat ||
+                            keyframe.beat > layer.endBeat;
+                          return (
+                            <span
+                              className={`keyframe-overview-${keyframe.track} ${cropped ? 'keyframe-overview-cropped' : ''}`}
+                              key={keyframe.id}
+                              style={{
+                                left: `${(keyframe.beat / scene.loopLengthBeats) * 100}%`,
+                                ...('paletteTokenId' in keyframe
+                                  ? {
+                                      backgroundColor: palette.find(
+                                        ({ id }) =>
+                                          id === keyframe.paletteTokenId,
+                                      )?.value,
+                                    }
+                                  : {}),
+                              }}
+                            />
+                          );
+                        })}
                     </span>
                   ) : null}
                   <div
@@ -1026,15 +1445,30 @@ export function SceneTimeline({
                     layer={layer}
                     loopLengthBeats={scene.loopLengthBeats}
                     palette={palette}
-                    selectedKeyframeId={selectedKeyframeId}
+                    snap={snap}
+                    selectedKeyframes={selectedKeyframes.filter((reference) =>
+                      layer.tracks[reference.track].keyframes.some(
+                        ({ id }) => id === reference.id,
+                      ),
+                    )}
+                    timeSignatureNumerator={timing.timeSignature.numerator}
+                    visibleBeatRange={visibleBeatRange}
                     onAddKeyframe={(beat, value) =>
                       onAddKeyframe(layer.id, beat, value)
                     }
-                    onSelectKeyframe={(track, id) =>
-                      onSelectKeyframe(layer.id, track, id)
+                    onSelectKeyframes={(keyframes, primary) =>
+                      onSelectKeyframes(layer.id, keyframes, primary)
                     }
-                    onUpdateKeyframe={(track, id, beat, options) =>
-                      onUpdateKeyframe(layer.id, track, id, beat, options)
+                    onOpenContextMenu={(event, keyframes) =>
+                      setContextMenu({
+                        keyframes,
+                        kind: 'keyframes',
+                        layerId: layer.id,
+                        point: { x: event.clientX, y: event.clientY },
+                      })
+                    }
+                    onUpdateKeyframes={(keyframes, options) =>
+                      onUpdateKeyframes(layer.id, keyframes, options)
                     }
                   />
                 ) : null}
@@ -1056,6 +1490,11 @@ export function SceneTimeline({
           </div>
         </div>
       </div>
+      <ContextMenu
+        items={contextItems}
+        point={contextMenu?.point ?? null}
+        onClose={() => setContextMenu(null)}
+      />
     </div>
   );
 }

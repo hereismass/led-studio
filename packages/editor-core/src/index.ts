@@ -64,6 +64,29 @@ import type { EditorHistory, EditorHistoryTransition } from './history.js';
 
 export type KeyframeTrackKind = 'brightness' | 'colour';
 
+export interface KeyframeReference {
+  id: string;
+  track: KeyframeTrackKind;
+}
+
+export interface KeyframeMove extends KeyframeReference {
+  beat: number;
+}
+
+export type PastedKeyframe =
+  | {
+      beat: number;
+      brightnessPercent: number;
+      id: string;
+      track: 'brightness';
+    }
+  | {
+      beat: number;
+      id: string;
+      paletteTokenId: string;
+      track: 'colour';
+    };
+
 export interface SceneLayerChanges {
   colourInterpolation?: KeyframeLayer['tracks']['colour']['interpolation'];
   effect?: Effect;
@@ -153,6 +176,12 @@ export type EditorCommand =
       type: 'scene-layer-moved';
     }
   | {
+      layer: SceneLayer;
+      sceneId: string;
+      toIndex: number;
+      type: 'scene-layer-pasted';
+    }
+  | {
       beat: number;
       id: string;
       layerId: string;
@@ -187,6 +216,24 @@ export type EditorCommand =
       sceneId: string;
       track: KeyframeTrackKind;
       type: 'keyframe-deleted';
+    }
+  | {
+      keyframes: KeyframeReference[];
+      layerId: string;
+      sceneId: string;
+      type: 'keyframes-deleted';
+    }
+  | {
+      keyframes: KeyframeMove[];
+      layerId: string;
+      sceneId: string;
+      type: 'keyframes-moved';
+    }
+  | {
+      keyframes: PastedKeyframe[];
+      layerId: string;
+      sceneId: string;
+      type: 'keyframes-pasted';
     };
 
 export type EditorCommandErrorCode =
@@ -1463,6 +1510,315 @@ export function applyEditorCommand(
         const layers = [...scene.layers];
         const [layer] = layers.splice(index, 1);
         layers.splice(toIndex, 0, layer);
+        return { ...scene, layers };
+      });
+    }
+    case 'scene-layer-pasted': {
+      return updateScene(project, command.sceneId, (scene) => {
+        assertCollectionCapacity(
+          scene.layers.length,
+          PROJECT_LIMITS.layersPerScene,
+          'Scenes',
+        );
+        if (!Number.isInteger(command.toIndex))
+          throw new EditorCommandError(
+            'invalid-command',
+            'Layer position must be an integer.',
+          );
+        const nestedIds =
+          command.layer.kind === 'keyframe'
+            ? [
+                ...command.layer.tracks.brightness.keyframes.map(
+                  ({ id }) => id,
+                ),
+                ...command.layer.tracks.colour.keyframes.map(({ id }) => id),
+              ]
+            : [];
+        assertNewEntityIds(project, [command.layer.id, ...nestedIds]);
+        if (
+          command.layer.startBeat < 0 ||
+          command.layer.endBeat > scene.loopLengthBeats
+        )
+          throw new EditorCommandError(
+            'invalid-command',
+            'Pasted layer must fit within the scene loop.',
+          );
+        const target = assertTarget(project, command.layer.target);
+        if (command.layer.kind === 'effect')
+          tokenIndex(project, command.layer.effect.paletteTokenId);
+        else
+          command.layer.tracks.colour.keyframes.forEach(({ paletteTokenId }) =>
+            tokenIndex(project, paletteTokenId),
+          );
+        const layer = parseCommandValue(SceneLayerSchema, {
+          ...command.layer,
+          locked: false,
+          name: uniqueName(
+            scene.layers.map(({ name }) => name),
+            command.layer.name,
+          ),
+          target,
+        });
+        const layers = [...scene.layers];
+        layers.splice(
+          Math.max(0, Math.min(layers.length, command.toIndex)),
+          0,
+          layer,
+        );
+        return { ...scene, layers };
+      });
+    }
+    case 'keyframes-moved': {
+      return updateScene(project, command.sceneId, (scene) => {
+        const layerPosition = layerIndex(scene, command.layerId);
+        const layer = scene.layers[layerPosition];
+        if (layer.kind !== 'keyframe')
+          throw new EditorCommandError(
+            'invalid-command',
+            'Keyframes can only be moved in a keyframe layer.',
+          );
+        if (layer.locked)
+          throw new EditorCommandError(
+            'locked-entity',
+            `Layer "${layer.name}" is locked.`,
+          );
+        if (command.keyframes.length === 0) return scene;
+        const identities = new Set<string>();
+        const movesByTrack = {
+          brightness: new Map<string, number>(),
+          colour: new Map<string, number>(),
+        };
+        command.keyframes.forEach((move) => {
+          const identity = `${move.track}:${move.id}`;
+          if (identities.has(identity))
+            throw new EditorCommandError(
+              'invalid-command',
+              'A keyframe can only be moved once per command.',
+            );
+          identities.add(identity);
+          const beat = parseCommandValue(QuarterBeatSchema, move.beat);
+          if (beat > scene.loopLengthBeats)
+            throw new EditorCommandError(
+              'invalid-command',
+              'Keyframe must be within the scene loop.',
+            );
+          movesByTrack[move.track].set(move.id, beat);
+        });
+
+        function moveTrack<T extends { beat: number; id: string }>(
+          track: KeyframeTrackKind,
+          keyframes: readonly T[],
+        ): T[] {
+          const moves = movesByTrack[track];
+          if (moves.size === 0) return keyframes as T[];
+          const existingIds = new Set(keyframes.map(({ id }) => id));
+          moves.forEach((_, id) => {
+            if (!existingIds.has(id))
+              throw new EditorCommandError(
+                'missing-entity',
+                `Keyframe "${id}" does not exist.`,
+              );
+          });
+          const occupied = new Set(
+            keyframes
+              .filter(({ id }) => !moves.has(id))
+              .map(({ beat }) => beat),
+          );
+          moves.forEach((beat) => {
+            if (occupied.has(beat))
+              throw new EditorCommandError(
+                'invalid-command',
+                'A keyframe already exists at a destination beat.',
+              );
+            occupied.add(beat);
+          });
+          if (
+            keyframes.every(
+              (keyframe) =>
+                (moves.get(keyframe.id) ?? keyframe.beat) === keyframe.beat,
+            )
+          )
+            return keyframes as T[];
+          return keyframes
+            .map((keyframe) => ({
+              ...keyframe,
+              beat: moves.get(keyframe.id) ?? keyframe.beat,
+            }))
+            .sort((left, right) => left.beat - right.beat);
+        }
+
+        const brightness = moveTrack(
+          'brightness',
+          layer.tracks.brightness.keyframes,
+        );
+        const colour = moveTrack('colour', layer.tracks.colour.keyframes);
+        const changed =
+          brightness.some(
+            (keyframe, index) =>
+              keyframe !== layer.tracks.brightness.keyframes[index],
+          ) ||
+          colour.some(
+            (keyframe, index) =>
+              keyframe !== layer.tracks.colour.keyframes[index],
+          );
+        if (!changed) return scene;
+        const layers = [...scene.layers];
+        layers[layerPosition] = {
+          ...layer,
+          tracks: {
+            brightness: { keyframes: brightness },
+            colour: { ...layer.tracks.colour, keyframes: colour },
+          },
+        };
+        return { ...scene, layers };
+      });
+    }
+    case 'keyframes-deleted': {
+      return updateScene(project, command.sceneId, (scene) => {
+        const layerPosition = layerIndex(scene, command.layerId);
+        const layer = scene.layers[layerPosition];
+        if (layer.kind !== 'keyframe')
+          throw new EditorCommandError(
+            'invalid-command',
+            'Keyframes can only be deleted from a keyframe layer.',
+          );
+        if (layer.locked)
+          throw new EditorCommandError(
+            'locked-entity',
+            `Layer "${layer.name}" is locked.`,
+          );
+        const deleteIds = {
+          brightness: new Set<string>(),
+          colour: new Set<string>(),
+        };
+        command.keyframes.forEach(({ id, track }) => {
+          if (deleteIds[track].has(id))
+            throw new EditorCommandError(
+              'invalid-command',
+              'A keyframe can only be deleted once per command.',
+            );
+          if (!layer.tracks[track].keyframes.some((key) => key.id === id))
+            throw new EditorCommandError(
+              'missing-entity',
+              `Keyframe "${id}" does not exist.`,
+            );
+          deleteIds[track].add(id);
+        });
+        if (command.keyframes.length === 0) return scene;
+        const layers = [...scene.layers];
+        layers[layerPosition] = {
+          ...layer,
+          tracks: {
+            brightness: {
+              keyframes: layer.tracks.brightness.keyframes.filter(
+                ({ id }) => !deleteIds.brightness.has(id),
+              ),
+            },
+            colour: {
+              ...layer.tracks.colour,
+              keyframes: layer.tracks.colour.keyframes.filter(
+                ({ id }) => !deleteIds.colour.has(id),
+              ),
+            },
+          },
+        };
+        return { ...scene, layers };
+      });
+    }
+    case 'keyframes-pasted': {
+      return updateScene(project, command.sceneId, (scene) => {
+        const layerPosition = layerIndex(scene, command.layerId);
+        const layer = scene.layers[layerPosition];
+        if (layer.kind !== 'keyframe')
+          throw new EditorCommandError(
+            'invalid-command',
+            'Keyframes can only be pasted into a keyframe layer.',
+          );
+        if (layer.locked)
+          throw new EditorCommandError(
+            'locked-entity',
+            `Layer "${layer.name}" is locked.`,
+          );
+        if (command.keyframes.length === 0) return scene;
+        const brightnessInput = command.keyframes.filter(
+          (
+            keyframe,
+          ): keyframe is Extract<PastedKeyframe, { track: 'brightness' }> =>
+            keyframe.track === 'brightness',
+        );
+        const colourInput = command.keyframes.filter(
+          (
+            keyframe,
+          ): keyframe is Extract<PastedKeyframe, { track: 'colour' }> =>
+            keyframe.track === 'colour',
+        );
+        if (
+          layer.tracks.brightness.keyframes.length + brightnessInput.length >
+            PROJECT_LIMITS.keyframesPerTrack ||
+          layer.tracks.colour.keyframes.length + colourInput.length >
+            PROJECT_LIMITS.keyframesPerTrack
+        )
+          throw new EditorCommandError(
+            'invalid-command',
+            `Tracks cannot contain more than ${PROJECT_LIMITS.keyframesPerTrack} keyframes.`,
+          );
+        assertNewEntityIds(
+          project,
+          command.keyframes.map(({ id }) => id),
+        );
+
+        function assertFreeBeats(
+          existing: readonly { beat: number }[],
+          incoming: readonly { beat: number }[],
+        ) {
+          const occupied = new Set(existing.map(({ beat }) => beat));
+          incoming.forEach(({ beat }) => {
+            const parsedBeat = parseCommandValue(QuarterBeatSchema, beat);
+            if (parsedBeat > scene.loopLengthBeats || occupied.has(parsedBeat))
+              throw new EditorCommandError(
+                'invalid-command',
+                parsedBeat > scene.loopLengthBeats
+                  ? 'Pasted keyframes must fit within the scene loop.'
+                  : 'A keyframe already exists at a destination beat.',
+              );
+            occupied.add(parsedBeat);
+          });
+        }
+        assertFreeBeats(layer.tracks.brightness.keyframes, brightnessInput);
+        assertFreeBeats(layer.tracks.colour.keyframes, colourInput);
+        const brightness = brightnessInput.map((keyframe) =>
+          parseCommandValue(BrightnessKeyframeSchema, {
+            beat: keyframe.beat,
+            brightnessPercent: keyframe.brightnessPercent,
+            id: keyframe.id,
+          }),
+        );
+        const colour = colourInput.map((keyframe) => {
+          tokenIndex(project, keyframe.paletteTokenId);
+          return parseCommandValue(ColourKeyframeSchema, {
+            beat: keyframe.beat,
+            id: keyframe.id,
+            paletteTokenId: keyframe.paletteTokenId,
+          });
+        });
+        const layers = [...scene.layers];
+        layers[layerPosition] = {
+          ...layer,
+          tracks: {
+            brightness: {
+              keyframes: [
+                ...layer.tracks.brightness.keyframes,
+                ...brightness,
+              ].sort((left, right) => left.beat - right.beat),
+            },
+            colour: {
+              ...layer.tracks.colour,
+              keyframes: [...layer.tracks.colour.keyframes, ...colour].sort(
+                (left, right) => left.beat - right.beat,
+              ),
+            },
+          },
+        };
         return { ...scene, layers };
       });
     }
