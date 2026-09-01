@@ -1,0 +1,62 @@
+@media (max-width: 960px) {
+  .workspace-toolbar {
+    grid-template-columns: minmax(210px, 1fr) auto auto;
+  }
+
+  .profile-chip {
+    display: none;
+  }
+
+  .workspace-view-actions button:not(:last-child) {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+@media (max-width: 780px) {
+  .workspace-transport {
+    display: none;
+  }
+
+  .workspace-toolbar {
+    grid-template-columns: minmax(240px, 1fr) auto;
+  }
+}
+
+@media (max-width: 680px) {
+  .app-shell {
+    width: min(100% - 32px, 960px);
+    padding: 36px 0;
+  }
+
+  .launcher-shell {
+    padding-top: 44px;
+  }
+
+  .launcher-actions {
+    grid-template-columns: 1fr;
+    margin-top: 36px;
+  }
+
+  .launcher-card {
+    min-height: 132px;
+  }
+
+  .example-row {
+    grid-template-columns: auto 1fr auto;
+  }
+
+  .example-profile {
+    display: none;
+  }
+}

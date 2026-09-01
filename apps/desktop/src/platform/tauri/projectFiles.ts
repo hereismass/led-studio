@@ -1,0 +1,74 @@
+import { invoke } from '@tauri-apps/api/core';
+import { message } from '@tauri-apps/plugin-dialog';
+import type {
+  OpenedProjectFile,
+  ProjectFileReference,
+  ProjectStorageGateway,
+  UnsavedChangesDecision,
+  UnsavedChangesGateway,
+  UnsavedChangesIntent,
+} from '@/platform/ports/projectFiles';
+
+export async function openProject(): Promise<OpenedProjectFile | null> {
+  return invoke<OpenedProjectFile | null>('open_project');
+}
+
+export async function saveProject(
+  file: ProjectFileReference,
+  contents: string,
+): Promise<void> {
+  await invoke('save_project', { contents, handle: file.handle });
+}
+
+export async function saveProjectAs(
+  suggestedName: string,
+  contents: string,
+): Promise<ProjectFileReference | null> {
+  return invoke<ProjectFileReference | null>('save_project_as', {
+    contents,
+    suggestedName,
+  });
+}
+
+export async function releaseProject(
+  file: ProjectFileReference,
+): Promise<void> {
+  await invoke('release_project_file', { handle: file.handle });
+}
+
+export async function confirmUnsavedChanges(
+  name: string,
+  intent: UnsavedChangesIntent,
+): Promise<UnsavedChangesDecision> {
+  const action =
+    intent === 'quit' ? 'quitting LED Studio' : 'choosing another project';
+  const response = await message(
+    `Do you want to save changes to “${name}” before ${action}?`,
+    {
+      buttons: { yes: 'Save', no: 'Discard', cancel: 'Cancel' },
+      kind: 'warning',
+      title: 'Unsaved project',
+    },
+  );
+
+  if (response === 'Save') {
+    return 'save';
+  }
+
+  if (response === 'Discard') {
+    return 'discard';
+  }
+
+  return 'cancel';
+}
+
+export const nativeProjectStorageGateway: ProjectStorageGateway = {
+  openProject,
+  releaseProject,
+  saveProject,
+  saveProjectAs,
+};
+
+export const nativeUnsavedChangesGateway: UnsavedChangesGateway = {
+  confirmUnsavedChanges,
+};

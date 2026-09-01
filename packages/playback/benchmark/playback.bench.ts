@@ -55,6 +55,7 @@ const keyframeScene: Scene = {
           keyframes: Array.from({ length: 4096 }, (_, index) => ({
             beat: index,
             brightnessPercent: index % 101,
+            easing: 'linear',
             id: uuid(index + 10_000),
           })),
         },

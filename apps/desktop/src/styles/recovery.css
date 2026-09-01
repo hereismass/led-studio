@@ -1,0 +1,22 @@
+.workspace-recovery {
+  min-height: 100vh;
+  display: grid;
+  align-content: center;
+  justify-items: start;
+  gap: 12px;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 40px;
+}
+
+.workspace-recovery h1,
+.workspace-recovery p {
+  margin: 0;
+}
+
+.workspace-recovery-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}

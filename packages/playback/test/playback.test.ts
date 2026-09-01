@@ -3,6 +3,7 @@ import type { PaletteToken, Scene } from '@led-studio/project-format';
 import { describe, expect, it } from 'vitest';
 import {
   advanceLoopPosition,
+  applyKeyframeEasing,
   compileSceneEvaluator,
   evaluateBrightnessTrack,
   evaluateColourTrack,
@@ -319,11 +320,13 @@ describe('scene evaluation', () => {
           {
             beat: 0,
             brightnessPercent: 0,
+            easing: 'linear',
             id: '11111111-1111-4111-8111-111111111111',
           },
           {
             beat: 2,
             brightnessPercent: 100,
+            easing: 'linear',
             id: '22222222-2222-4222-8222-222222222222',
           },
         ],
@@ -334,11 +337,13 @@ describe('scene evaluation', () => {
     const keyframes = [
       {
         beat: 0,
+        easing: 'linear' as const,
         id: '33333333-3333-4333-8333-333333333333',
         paletteTokenId: PINK_ID,
       },
       {
         beat: 2,
+        easing: 'linear' as const,
         id: '44444444-4444-4444-8444-444444444444',
         paletteTokenId: GREEN_ID,
       },
@@ -358,21 +363,88 @@ describe('scene evaluation', () => {
     ).toBe('#45FF72');
   });
 
+  it.each([
+    ['linear', 0.25, 25],
+    ['ease-in', 0.25, 6.25],
+    ['ease-out', 0.25, 43.75],
+    ['ease-in-out', 0.25, 12.5],
+  ] as const)(
+    'applies %s easing to brightness progress',
+    (easing, position, expected) => {
+      expect(
+        evaluateBrightnessTrack(
+          [
+            {
+              beat: 0,
+              brightnessPercent: 0,
+              easing,
+              id: '77777777-7777-4777-8777-777777777777',
+            },
+            {
+              beat: 1,
+              brightnessPercent: 100,
+              easing: 'linear',
+              id: '88888888-8888-4888-8888-888888888888',
+            },
+          ],
+          position,
+        ),
+      ).toBe(expected);
+    },
+  );
+
+  it('uses the outgoing colour key easing while Step remains discrete', () => {
+    const colours = new Map(palette.map((token) => [token.id, token.value]));
+    const keyframes = [
+      {
+        beat: 0,
+        easing: 'ease-in' as const,
+        id: '77777777-7777-4777-8777-777777777777',
+        paletteTokenId: PINK_ID,
+      },
+      {
+        beat: 1,
+        easing: 'linear' as const,
+        id: '88888888-8888-4888-8888-888888888888',
+        paletteTokenId: GREEN_ID,
+      },
+    ];
+    expect(
+      evaluateColourTrack(
+        { interpolation: 'linear-rgb', keyframes },
+        colours,
+        0.5,
+      ),
+    ).toBe('#D16090');
+    expect(
+      evaluateColourTrack({ interpolation: 'step', keyframes }, colours, 0.5),
+    ).toBe('#FF2B9A');
+  });
+
+  it('bounds easing progress and preserves exact endpoints', () => {
+    expect(applyKeyframeEasing('ease-in', -1)).toBe(0);
+    expect(applyKeyframeEasing('ease-out', 2)).toBe(1);
+    expect(applyKeyframeEasing('ease-in-out', 0.5)).toBe(0.5);
+  });
+
   it('uses terminal keys as inclusive interpolation endpoints', () => {
     const brightnessKeyframes = [
       {
         beat: 0,
         brightnessPercent: 0,
+        easing: 'linear' as const,
         id: '11111111-1111-4111-8111-111111111111',
       },
       {
         beat: 2,
         brightnessPercent: 100,
+        easing: 'linear' as const,
         id: '22222222-2222-4222-8222-222222222222',
       },
       {
         beat: 4,
         brightnessPercent: 0,
+        easing: 'linear' as const,
         id: '33333333-3333-4333-8333-333333333333',
       },
     ];
@@ -393,16 +465,19 @@ describe('scene evaluation', () => {
           keyframes: [
             {
               beat: 0,
+              easing: 'linear',
               id: '44444444-4444-4444-8444-444444444444',
               paletteTokenId: GREEN_ID,
             },
             {
               beat: 2,
+              easing: 'linear',
               id: '55555555-5555-4555-8555-555555555555',
               paletteTokenId: PINK_ID,
             },
             {
               beat: 4,
+              easing: 'linear',
               id: '66666666-6666-4666-8666-666666666666',
               paletteTokenId: GREEN_ID,
             },
@@ -433,16 +508,19 @@ describe('scene evaluation', () => {
                 {
                   beat: 0,
                   brightnessPercent: 50,
+                  easing: 'linear',
                   id: '11111111-1111-4111-8111-111111111111',
                 },
                 {
                   beat: 2,
                   brightnessPercent: 100,
+                  easing: 'linear',
                   id: '22222222-2222-4222-8222-222222222222',
                 },
                 {
                   beat: 3,
                   brightnessPercent: 0,
+                  easing: 'linear',
                   id: '33333333-3333-4333-8333-333333333333',
                 },
               ],

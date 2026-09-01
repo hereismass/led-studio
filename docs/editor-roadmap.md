@@ -129,6 +129,18 @@ Implementation complete; the workflow, selection, and timeline-scale review gate
 - Retain React and SVG: viewport filtering and isolated playback subscriptions address the measured rendering risks without adding Canvas, WebGL, a worker, or a global state library.
 - Document the v2 format, session clipboard boundary, editor commands, preferences, rendering model, and deliberately deferred systems.
 
+### 8. Easing and animation shaping
+
+Implementation complete; the easing presets and timeline-curve review gate is open for feedback.
+
+- Store Linear, Ease In, Ease Out, or Ease In/Out on each brightness and colour keyframe as the shape of its outgoing segment.
+- Use deterministic quadratic easing in the UI-independent playback evaluator for brightness and smooth RGB colour; Step colour ignores easing without deleting it.
+- Edit easing from single- and multi-key inspectors, with terminal, stepped-colour, and locked states explained explicitly.
+- Preserve easing through keyframe and layer duplication, session clipboard operations, and atomic multi-key commands.
+- Sample eased brightness curves and colour gradients from the same playback functions while retaining viewport-bounded timeline work.
+- Keep freeform curve handles, additional effects, blend modes, sequences, and external control deferred.
+- Review gate: preset usefulness, curve readability, bulk-edit behavior, and whether custom curves are ever justified.
+
 ## Deferred work
 
 - Revisit the reserved `sequence` collection only after the scene and animation workflow is established.

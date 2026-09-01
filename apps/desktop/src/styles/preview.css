@@ -1,0 +1,285 @@
+.workspace-resizer {
+  z-index: 3;
+  position: relative;
+  touch-action: none;
+  background: #111016;
+}
+
+.workspace-resizer::after {
+  position: absolute;
+  content: '';
+  background: transparent;
+  transition: background-color 120ms ease;
+}
+
+.workspace-resizer:hover::after {
+  background: rgba(255, 43, 154, 0.65);
+}
+
+.workspace-resizer:focus-visible {
+  outline: none;
+}
+
+.workspace-resizer:focus-visible::after {
+  background: #ff2b9a;
+}
+
+.workspace-resizer-vertical {
+  grid-row: 1;
+  cursor: col-resize;
+}
+
+.workspace-resizer-vertical::after {
+  inset: 0 2px;
+}
+
+.assets-panel + .workspace-resizer {
+  grid-column: 2;
+}
+
+.hardware-workspace + .workspace-resizer {
+  grid-column: 4;
+}
+
+.workspace-resizer-horizontal {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  cursor: row-resize;
+}
+
+.workspace-resizer-horizontal::after {
+  inset: 2px 0;
+}
+
+.hardware-workspace {
+  display: grid;
+  grid-column: 3;
+  grid-row: 1;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(
+      circle at 50% 45%,
+      rgba(255, 43, 154, 0.07),
+      transparent 45%
+    ),
+    #111016;
+}
+
+.hardware-groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 8px 16px;
+  border-bottom: 1px solid #29262e;
+}
+
+.hardware-groups button {
+  padding: 5px 8px;
+  color: #aaa3b4;
+  font-size: 0.6rem;
+  border: 1px solid #39343f;
+  border-radius: 999px;
+  background: #19171d;
+  cursor: pointer;
+}
+
+.hardware-groups button:hover:not(:disabled) {
+  color: #f7f5fa;
+  border-color: #625a6b;
+}
+
+.hardware-groups button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.hardware-groups span {
+  margin-left: 5px;
+  color: #706979;
+}
+
+.hardware-groups .hardware-custom-group {
+  border-color: rgba(128, 113, 255, 0.42);
+}
+
+.hardware-workspace-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #29262e;
+}
+
+.workspace-eyebrow {
+  color: #706979;
+  font-size: 0.58rem;
+  font-weight: 720;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.hardware-workspace-heading h2 {
+  margin-top: 3px;
+  font-size: 0.86rem;
+}
+
+.workspace-view-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.workspace-view-actions button {
+  min-height: 27px;
+  padding: 4px 7px;
+  border-radius: 6px;
+  font-size: 0.62rem;
+}
+
+.hardware-stage {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  place-items: center;
+  overflow: auto;
+}
+
+.fretboard-editor {
+  position: relative;
+  width: min(100%, 1120px);
+  min-width: 620px;
+  padding: 18px 24px 28px;
+}
+
+.fretboard-svg {
+  display: block;
+  width: 100%;
+  overflow: visible;
+}
+
+.fretboard-neck {
+  fill: url(#neck-fill);
+  stroke: #51444c;
+  stroke-width: 2;
+}
+
+.fretboard-fret,
+.fretboard-body-edge,
+.fretboard-nut,
+.fretboard-string {
+  pointer-events: none;
+}
+
+.fretboard-fret {
+  stroke: #746972;
+  stroke-width: 1.5;
+}
+
+.fretboard-body-edge {
+  stroke: #2a252b;
+}
+
+.fretboard-nut {
+  stroke: #e8e0e3;
+  stroke-width: 5;
+}
+
+.fretboard-string {
+  stroke: rgba(221, 214, 218, 0.58);
+  stroke-width: 1.2;
+}
+
+.fretboard-label {
+  fill: #6f6773;
+  font:
+    11px ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+  text-anchor: middle;
+}
+
+.fretboard-selection-surface {
+  fill: transparent;
+  cursor: crosshair;
+}
+
+.fretboard-led {
+  cursor: pointer;
+  outline: none;
+}
+
+.fretboard-led-hit {
+  fill: transparent;
+}
+
+.fretboard-led-dot {
+  stroke: #a9a0aa;
+  stroke-width: 1.5;
+}
+
+.fretboard-led-glow {
+  filter: url(#led-glow);
+  pointer-events: none;
+}
+
+.fretboard-led-selected .fretboard-led-dot,
+.fretboard-led:focus-visible .fretboard-led-dot {
+  stroke: #fff;
+  stroke-width: 3;
+}
+
+.fretboard-led-selected .fretboard-led-hit {
+  stroke: rgba(255, 43, 154, 0.75);
+  stroke-width: 2;
+}
+
+.fretboard-marquee {
+  fill: rgba(255, 43, 154, 0.11);
+  stroke: #ff62ae;
+  stroke-dasharray: 5 3;
+  pointer-events: none;
+}
+
+.fretboard-empty-hint {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  color: #8b8491;
+  font-size: 0.68rem;
+  transform: translateX(-50%);
+}
+
+.panel-placeholder {
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  max-width: 360px;
+  padding: 15px;
+  color: #77707f;
+  text-align: left;
+}
+
+.panel-placeholder > span {
+  color: #55505c;
+  font-size: 1.25rem;
+}
+
+.panel-placeholder strong {
+  color: #b9b3c0;
+  font-size: 0.73rem;
+  font-weight: 620;
+}
+
+.panel-placeholder p {
+  margin-top: 4px;
+  font-size: 0.66rem;
+  line-height: 1.45;
+}

@@ -91,6 +91,7 @@ describe('large editor commands', () => {
           (_, index) => ({
             beat: index / 4,
             brightnessPercent: index % 101,
+            easing: 'linear',
             id: uuid(50_000 + index),
           }),
         ),

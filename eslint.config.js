@@ -40,4 +40,63 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    files: ['apps/desktop/src/shared/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: [
+                '@/app/**',
+                '@/features/**',
+                '@/platform/**',
+                '@/workspace/**',
+              ],
+              message:
+                'Shared desktop code cannot depend on higher-level modules.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ['apps/desktop/src/features/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@/app/**', '@/platform/tauri/**', '@/workspace/**'],
+              message:
+                'Features may use shared code and platform-neutral packages, not app, workspace, or Tauri implementations.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: [
+      'apps/desktop/src/app/session/**/*.{ts,tsx}',
+      'apps/desktop/src/workspace/**/*.{ts,tsx}',
+    ],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@/platform/tauri/**'],
+              message:
+                'Session and workspace code must depend on platform ports, not concrete Tauri adapters.',
+            },
+          ],
+        },
+      ],
+    },
+  },
 );

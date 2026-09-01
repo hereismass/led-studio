@@ -239,10 +239,18 @@ export const EffectLayerSchema = z
     path: ['endBeat'],
   });
 
+export const KeyframeEasingSchema = z.enum([
+  'linear',
+  'ease-in',
+  'ease-out',
+  'ease-in-out',
+]);
+
 export const BrightnessKeyframeSchema = z
   .object({
     beat: QuarterBeatSchema,
     brightnessPercent: SceneBrightnessPercentSchema,
+    easing: KeyframeEasingSchema.default('linear'),
     id: ProjectEntityIdSchema,
   })
   .strict();
@@ -250,6 +258,7 @@ export const BrightnessKeyframeSchema = z
 export const ColourKeyframeSchema = z
   .object({
     beat: QuarterBeatSchema,
+    easing: KeyframeEasingSchema.default('linear'),
     id: ProjectEntityIdSchema,
     paletteTokenId: PaletteTokenIdSchema,
   })
@@ -604,6 +613,7 @@ export const ProjectSchema = z
   });
 
 export type BrightnessKeyframe = z.infer<typeof BrightnessKeyframeSchema>;
+export type KeyframeEasing = z.infer<typeof KeyframeEasingSchema>;
 export type BrightnessKeyframeTrack = z.infer<
   typeof BrightnessKeyframeTrackSchema
 >;

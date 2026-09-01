@@ -3,6 +3,7 @@ import type {
   BrightnessKeyframe,
   ColourKeyframeTrack,
   EffectLayer,
+  KeyframeEasing,
   KeyframeLayer,
   PaletteToken,
   ProjectGroup,
@@ -59,16 +60,36 @@ function surroundingKeyframes<T extends { beat: number }>(
   };
 }
 
+export function applyKeyframeEasing(
+  easing: KeyframeEasing,
+  progress: number,
+): number {
+  const bounded = Math.max(0, Math.min(1, progress));
+  switch (easing) {
+    case 'ease-in':
+      return bounded * bounded;
+    case 'ease-out':
+      return 1 - (1 - bounded) * (1 - bounded);
+    case 'ease-in-out':
+      return bounded < 0.5
+        ? 2 * bounded * bounded
+        : 1 - (-2 * bounded + 2) ** 2 / 2;
+    case 'linear':
+      return bounded;
+  }
+}
+
 export function evaluateBrightnessTrack(
   keyframes: readonly BrightnessKeyframe[],
   positionBeats: number,
 ): number | null {
   const segment = surroundingKeyframes(keyframes, positionBeats);
   if (!segment) return null;
+  const progress = applyKeyframeEasing(segment.left.easing, segment.progress);
   return (
     segment.left.brightnessPercent +
     (segment.right.brightnessPercent - segment.left.brightnessPercent) *
-      segment.progress
+      progress
   );
 }
 
@@ -116,7 +137,11 @@ export function evaluateColourTrack(
     segment.progress === 0
   )
     return left;
-  return interpolateColour(left, right, segment.progress);
+  return interpolateColour(
+    left,
+    right,
+    applyKeyframeEasing(segment.left.easing, segment.progress),
+  );
 }
 
 function requireFinitePositive(value: number, name: string): void {

@@ -289,6 +289,7 @@ describe('ProjectSchema', () => {
                     {
                       beat: 2,
                       brightnessPercent: 75,
+                      easing: 'ease-in-out',
                       id: BRIGHTNESS_KEY_2_ID,
                     },
                   ],
@@ -298,6 +299,7 @@ describe('ProjectSchema', () => {
                   keyframes: [
                     {
                       beat: 1,
+                      easing: 'ease-out',
                       id: COLOUR_KEY_1_ID,
                       paletteTokenId: HOT_PINK_ID,
                     },
@@ -322,6 +324,13 @@ describe('ProjectSchema', () => {
     expect(layer.kind).toBe('keyframe');
     if (layer.kind !== 'keyframe') throw new Error('Expected keyframe layer');
     expect(layer.tracks.brightness.keyframes).toHaveLength(2);
+    expect(
+      layer.tracks.brightness.keyframes.map(({ easing }) => easing),
+    ).toEqual(['linear', 'ease-in-out']);
+    expect(layer.tracks.colour.keyframes.map(({ easing }) => easing)).toEqual([
+      'ease-out',
+      'linear',
+    ]);
     expect(layer.tracks.colour.interpolation).toBe('linear-rgb');
   });
 
@@ -376,6 +385,15 @@ describe('ProjectSchema', () => {
     });
 
     expect(ProjectSchema.safeParse(withLayer(layer)).success).toBe(false);
+
+    const invalidEasing = structuredClone(layer);
+    Object.assign(invalidEasing.tracks.brightness.keyframes[0], {
+      easing: 'spring',
+    });
+    invalidEasing.tracks.brightness.keyframes.reverse();
+    expect(ProjectSchema.safeParse(withLayer(invalidEasing)).success).toBe(
+      false,
+    );
 
     const duplicateId = structuredClone(layer);
     duplicateId.tracks.brightness.keyframes.reverse();

@@ -447,6 +447,9 @@ describe('editor commands', () => {
     expect(layer.tracks.brightness.keyframes.map(({ beat }) => beat)).toEqual([
       0.5, 1,
     ]);
+    expect(
+      layer.tracks.brightness.keyframes.map(({ easing }) => easing),
+    ).toEqual(['linear', 'linear']);
     expect(paletteTokenUsageCount(project, HOT_PINK_ID)).toBe(1);
     expect(() =>
       applyEditorCommand(project, {
@@ -460,7 +463,11 @@ describe('editor commands', () => {
     ).toThrow(/already exists/);
 
     project = applyEditorCommand(project, {
-      changes: { beat: 1.25, brightnessPercent: 90 },
+      changes: {
+        beat: 1.25,
+        brightnessPercent: 90,
+        easing: 'ease-in',
+      },
       id: BRIGHTNESS_KEY_ID,
       layerId: LAYER_ID,
       sceneId: SCENE_ID,
@@ -496,6 +503,7 @@ describe('editor commands', () => {
     expect(layer.tracks.brightness.keyframes.at(-1)).toMatchObject({
       beat: 1.5,
       brightnessPercent: 90,
+      easing: 'ease-in',
       id: KEY_COPY_ID,
     });
 
@@ -649,6 +657,36 @@ describe('editor commands', () => {
       ),
     );
 
+    project = applyEditorCommand(project, {
+      easing: 'ease-in-out',
+      keyframes: [
+        { id: BRIGHTNESS_KEY_ID, track: 'brightness' },
+        { id: COLOUR_KEY_ID, track: 'colour' },
+      ],
+      layerId: LAYER_ID,
+      sceneId: SCENE_ID,
+      type: 'keyframes-easing-set',
+    });
+    const easedLayer = project.scenes[0].layers[0];
+    if (easedLayer.kind !== 'keyframe')
+      throw new Error('Expected keyframe layer');
+    expect(easedLayer.tracks.brightness.keyframes[0].easing).toBe(
+      'ease-in-out',
+    );
+    expect(easedLayer.tracks.colour.keyframes[0].easing).toBe('ease-in-out');
+    expect(
+      applyEditorCommand(project, {
+        easing: 'ease-in-out',
+        keyframes: [
+          { id: BRIGHTNESS_KEY_ID, track: 'brightness' },
+          { id: COLOUR_KEY_ID, track: 'colour' },
+        ],
+        layerId: LAYER_ID,
+        sceneId: SCENE_ID,
+        type: 'keyframes-easing-set',
+      }),
+    ).toBe(project);
+
     const beforeRejectedMove = project;
     expect(() =>
       applyEditorCommand(project, {
@@ -677,11 +715,13 @@ describe('editor commands', () => {
         {
           beat: 2,
           brightnessPercent: 50,
+          easing: 'linear',
           id: '55555555-5555-4555-8555-555555555555',
           track: 'brightness',
         },
         {
           beat: 2,
+          easing: 'linear',
           id: '66666666-6666-4666-8666-666666666666',
           paletteTokenId: BLACK_ID,
           track: 'colour',

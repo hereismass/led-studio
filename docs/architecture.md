@@ -24,13 +24,28 @@ The editor clipboard is owned above an individual project workspace, so copied l
 
 No additional global state library is needed while a reducer and controller hook provide a clear state transition boundary.
 
+### Desktop source organization
+
+The desktop uses a hybrid feature-first layout under `apps/desktop/src`:
+
+- `app` owns application composition, the launcher, recovery boundary, and project-session orchestration.
+- `workspace` coordinates cross-feature selection, layout, clipboard state, and panel composition.
+- `features` owns cohesive editor surfaces such as assets, inspectors, playback, hardware preview, project settings, and the timeline.
+- `platform/ports` defines filesystem and lifecycle contracts without Tauri imports; `platform/tauri` contains their concrete native adapters.
+- `shared` contains reusable controls and interaction hooks that cannot import higher-level desktop modules.
+- `styles` keeps the existing global CSS cascade in explicit, ordered files grouped by editor surface.
+
+Cross-module desktop imports use the `@/` source alias, while imports inside one feature remain relative. ESLint prevents shared code from depending on features, prevents features from depending on app/workspace or concrete Tauri adapters, and keeps project-session/workspace code behind platform ports. The app composition root is the only normal consumer of concrete Tauri gateways.
+
+Tests stay beside the behavior they cover, except for the global test environment setup. Feature folders are not workspace packages: package extraction is reserved for code with a real non-React consumer or an independently useful public API.
+
 ## Playback and rendering
 
-`packages/playback` owns deterministic loop timing and scene evaluation. It compiles a scene, palette, project groups, and hardware profile into an evaluator, validating and indexing references once. Given an explicit musical position, the evaluator composites the static base with ordered Pulse, Chase, and keyframe layers and produces a complete LED frame without depending on React, Tauri, or wall-clock time. Layer zero is topmost; Pulse replaces every targeted LED while active, Chase replaces only its head and fading trail, and a keyframe track independently replaces brightness or colour when that property has keys. Brightness interpolates linearly; colour tracks choose smooth RGB or step interpolation. A keyframe layer's active window is a non-destructive mask over stored beat positions.
+`packages/playback` owns deterministic loop timing and scene evaluation. It compiles a scene, palette, project groups, and hardware profile into an evaluator, validating and indexing references once. Given an explicit musical position, the evaluator composites the static base with ordered Pulse, Chase, and keyframe layers and produces a complete LED frame without depending on React, Tauri, or wall-clock time. Layer zero is topmost; Pulse replaces every targeted LED while active, Chase replaces only its head and fading trail, and a keyframe track independently replaces brightness or colour when that property has keys. Each key stores Linear, Ease In, Ease Out, or Ease In/Out shaping for its outgoing segment. Brightness and smooth RGB colour use the same deterministic quadratic progress helper; step colour remains discrete and ignores easing. A keyframe layer's active window is a non-destructive mask over stored beat positions.
 
 The desktop preview controller owns the transient clock and transport state. It advances with `requestAnimationFrame` and exposes small external-store selectors. Playback buttons subscribe only to status; static fretboards do not subscribe to position, while animated fretboards and the timeline playhead refresh each tick. Keyframe authoring subscribes to quarter-beat changes rather than every animation frame. Play, pause, stop, and seek never create project revisions. Project tempo and scene-loop edits reconfigure the running preview without restarting its phase; selecting another scene stops and resets it.
 
-The timeline renders fine grid divisions with CSS and creates text-label and interactive keyframe nodes only for the visible viewport plus a small overscan. Scroll and resize measurement is animation-frame throttled, and layer-reorder geometry is captured once at drag start. Timeline zoom remains a rendering preference; persisted beats keep quarter-beat precision regardless of the active authoring snap.
+The timeline renders fine grid divisions with CSS and creates text-label and interactive keyframe nodes only for the visible viewport plus a small overscan. Eased brightness paths and colour gradients sample only those visible segments and call the same playback interpolation functions used by the LED preview. Scroll and resize measurement is animation-frame throttled, and layer-reorder geometry is captured once at drag start. Timeline zoom remains a rendering preference; persisted beats keep quarter-beat precision regardless of the active authoring snap.
 
 Animation evaluation remains independent from the rendering surface and caches repeat requests for the same position. Future effects, interpolation modes, and curve tools can extend the same centralized compositing model. Persisted preview tempo remains an editing default; any future external tempo override must remain transient runtime state.
 

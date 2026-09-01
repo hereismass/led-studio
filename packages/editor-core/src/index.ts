@@ -9,6 +9,7 @@ import {
   ColourKeyframeSchema,
   EffectLayerSchema,
   EffectSchema,
+  KeyframeEasingSchema,
   KeyframeLayerSchema,
   LayerTargetSchema,
   PaletteTokenNameSchema,
@@ -32,6 +33,7 @@ import {
   type ColourKeyframe,
   type PaletteToken,
   type Effect,
+  type KeyframeEasing,
   type KeyframeLayer,
   type LayerTarget,
   type Project,
@@ -77,11 +79,13 @@ export type PastedKeyframe =
   | {
       beat: number;
       brightnessPercent: number;
+      easing: KeyframeEasing;
       id: string;
       track: 'brightness';
     }
   | {
       beat: number;
+      easing: KeyframeEasing;
       id: string;
       paletteTokenId: string;
       track: 'colour';
@@ -99,8 +103,16 @@ export interface SceneLayerChanges {
 }
 
 export type KeyframeValue =
-  | { brightnessPercent: number; track: 'brightness' }
-  | { paletteTokenId: string; track: 'colour' };
+  | {
+      brightnessPercent: number;
+      easing?: KeyframeEasing;
+      track: 'brightness';
+    }
+  | {
+      easing?: KeyframeEasing;
+      paletteTokenId: string;
+      track: 'colour';
+    };
 
 export type EditorCommand =
   | { name: string; type: 'project-renamed' }
@@ -193,6 +205,7 @@ export type EditorCommand =
       changes: {
         beat?: number;
         brightnessPercent?: number;
+        easing?: KeyframeEasing;
         paletteTokenId?: string;
       };
       id: string;
@@ -200,6 +213,13 @@ export type EditorCommand =
       sceneId: string;
       track: KeyframeTrackKind;
       type: 'keyframe-updated';
+    }
+  | {
+      easing: KeyframeEasing;
+      keyframes: KeyframeReference[];
+      layerId: string;
+      sceneId: string;
+      type: 'keyframes-easing-set';
     }
   | {
       id: string;
@@ -1568,6 +1588,70 @@ export function applyEditorCommand(
         return { ...scene, layers };
       });
     }
+    case 'keyframes-easing-set': {
+      return updateScene(project, command.sceneId, (scene) => {
+        const layerPosition = layerIndex(scene, command.layerId);
+        const layer = scene.layers[layerPosition];
+        if (layer.kind !== 'keyframe')
+          throw new EditorCommandError(
+            'invalid-command',
+            'Easing can only be updated in a keyframe layer.',
+          );
+        if (layer.locked)
+          throw new EditorCommandError(
+            'locked-entity',
+            `Layer "${layer.name}" is locked.`,
+          );
+        if (command.keyframes.length === 0) return scene;
+        const easing = parseCommandValue(KeyframeEasingSchema, command.easing);
+        const selected = {
+          brightness: new Set<string>(),
+          colour: new Set<string>(),
+        };
+        command.keyframes.forEach(({ id, track }) => {
+          if (selected[track].has(id))
+            throw new EditorCommandError(
+              'invalid-command',
+              'A keyframe easing can only be updated once per command.',
+            );
+          if (!layer.tracks[track].keyframes.some((key) => key.id === id))
+            throw new EditorCommandError(
+              'missing-entity',
+              `Keyframe "${id}" does not exist.`,
+            );
+          selected[track].add(id);
+        });
+        let changed = false;
+        const updateTrack = <T extends { easing: KeyframeEasing; id: string }>(
+          keyframes: readonly T[],
+          ids: ReadonlySet<string>,
+        ): T[] =>
+          keyframes.map((keyframe) => {
+            if (!ids.has(keyframe.id) || keyframe.easing === easing)
+              return keyframe;
+            changed = true;
+            return { ...keyframe, easing };
+          });
+        const brightness = updateTrack(
+          layer.tracks.brightness.keyframes,
+          selected.brightness,
+        );
+        const colour = updateTrack(
+          layer.tracks.colour.keyframes,
+          selected.colour,
+        );
+        if (!changed) return scene;
+        const layers = [...scene.layers];
+        layers[layerPosition] = {
+          ...layer,
+          tracks: {
+            brightness: { keyframes: brightness },
+            colour: { ...layer.tracks.colour, keyframes: colour },
+          },
+        };
+        return { ...scene, layers };
+      });
+    }
     case 'keyframes-moved': {
       return updateScene(project, command.sceneId, (scene) => {
         const layerPosition = layerIndex(scene, command.layerId);
@@ -1790,6 +1874,7 @@ export function applyEditorCommand(
           parseCommandValue(BrightnessKeyframeSchema, {
             beat: keyframe.beat,
             brightnessPercent: keyframe.brightnessPercent,
+            easing: keyframe.easing,
             id: keyframe.id,
           }),
         );
@@ -1797,6 +1882,7 @@ export function applyEditorCommand(
           tokenIndex(project, keyframe.paletteTokenId);
           return parseCommandValue(ColourKeyframeSchema, {
             beat: keyframe.beat,
+            easing: keyframe.easing,
             id: keyframe.id,
             paletteTokenId: keyframe.paletteTokenId,
           });
@@ -1861,10 +1947,12 @@ export function applyEditorCommand(
             ? parseCommandValue(BrightnessKeyframeSchema, {
                 beat: command.beat,
                 brightnessPercent: command.value.brightnessPercent,
+                easing: command.value.easing,
                 id: assertNewEntityId(project, command.id),
               })
             : parseCommandValue(ColourKeyframeSchema, {
                 beat: command.beat,
+                easing: command.value.easing,
                 id: assertNewEntityId(project, command.id),
                 paletteTokenId:
                   project.palette[
@@ -1953,10 +2041,12 @@ export function applyEditorCommand(
             beat,
             brightnessPercent:
               command.changes.brightnessPercent ?? current.brightnessPercent,
+            easing: command.changes.easing ?? current.easing,
           });
           if (
             nextKeyframe.beat === current.beat &&
-            nextKeyframe.brightnessPercent === current.brightnessPercent
+            nextKeyframe.brightnessPercent === current.brightnessPercent &&
+            nextKeyframe.easing === current.easing
           )
             return scene;
           const keyframes =
@@ -2010,13 +2100,15 @@ export function applyEditorCommand(
           const nextKeyframe = parseCommandValue(ColourKeyframeSchema, {
             ...current,
             beat,
+            easing: command.changes.easing ?? current.easing,
             paletteTokenId:
               command.changes.paletteTokenId ?? current.paletteTokenId,
           });
           tokenIndex(project, nextKeyframe.paletteTokenId);
           if (
             nextKeyframe.beat === current.beat &&
-            nextKeyframe.paletteTokenId === current.paletteTokenId
+            nextKeyframe.paletteTokenId === current.paletteTokenId &&
+            nextKeyframe.easing === current.easing
           )
             return scene;
           const keyframes =
@@ -2070,9 +2162,11 @@ export function applyEditorCommand(
             ? {
                 brightnessPercent: (source as { brightnessPercent: number })
                   .brightnessPercent,
+                easing: source.easing,
                 track: 'brightness',
               }
             : {
+                easing: source.easing,
                 paletteTokenId: (source as { paletteTokenId: string })
                   .paletteTokenId,
                 track: 'colour',
