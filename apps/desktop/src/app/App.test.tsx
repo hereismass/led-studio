@@ -28,7 +28,7 @@ const loadedProject = {
     },
   ],
   scenes: [],
-  sequence: [],
+  songs: [],
   groups: [],
 };
 
@@ -137,6 +137,99 @@ describe('App project launcher and lifecycle', () => {
     expect(
       screen.getByRole('option', { name: /White.*#FFFFFF/i }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole('option', { name: /Song 1.*1 cue/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('arranges shared scenes as editable song cues', async () => {
+    const user = userEvent.setup();
+    renderApp();
+
+    await user.click(screen.getByRole('button', { name: /new project/i }));
+    await user.click(screen.getByRole('button', { name: 'Add scene' }));
+    await user.click(screen.getByRole('option', { name: /Song 1.*1 cue/i }));
+
+    const songPanel = screen.getByRole('tabpanel', { name: 'Song cues' });
+    const inspector = screen.getByRole('complementary', { name: 'Inspector' });
+    expect(
+      within(inspector).getByText('Song', { selector: 'p' }),
+    ).toBeVisible();
+    expect(
+      within(screen.getByRole('listbox', { name: 'Songs' })).getAllByRole(
+        'option',
+      ),
+    ).toHaveLength(1);
+    expect(songPanel).toHaveTextContent('Scene 1');
+    expect(
+      within(songPanel).getByLabelText('Cue 1 loop count'),
+    ).toHaveTextContent('—');
+    await user.click(
+      within(songPanel).getByRole('button', { name: 'Add scene cue' }),
+    );
+    await user.click(screen.getByRole('option', { name: 'Scene 2' }));
+    expect(
+      within(songPanel).getByRole('list', { name: 'Song 1 cues' }),
+    ).toHaveTextContent('Scene 2');
+
+    await user.click(
+      within(songPanel).getAllByRole('radio', { name: 'After loops' }).at(-1)!,
+    );
+    expect(
+      within(songPanel).getByRole('spinbutton', { name: 'Cue 2 loop count' }),
+    ).toHaveValue(1);
+    await user.click(
+      within(inspector).getByRole('radio', { name: 'Immediate' }),
+    );
+    const songBpm = within(inspector).getByRole('spinbutton', {
+      name: 'Song BPM',
+    });
+    await user.clear(songBpm);
+    await user.type(songBpm, '128{Enter}');
+    expect(songPanel).toHaveTextContent('128 BPM');
+
+    await user.click(
+      within(songPanel).getByRole('button', {
+        name: 'Preview cue 1: Scene 1',
+      }),
+    );
+    expect(
+      within(inspector).getByText('Song', { selector: 'p' }),
+    ).toBeVisible();
+
+    await user.click(
+      within(inspector).getByRole('button', { name: 'Duplicate' }),
+    );
+    expect(
+      within(inspector).getByRole('textbox', { name: 'Song name' }),
+    ).toHaveValue('Song 1 Copy');
+    expect(
+      within(screen.getByRole('listbox', { name: 'Songs' })).getAllByRole(
+        'option',
+      ),
+    ).toHaveLength(2);
+    expect(
+      within(inspector).getByRole('button', { name: 'Move earlier' }),
+    ).toBeEnabled();
+    await user.click(
+      within(inspector).getByRole('button', { name: 'Move earlier' }),
+    );
+    expect(
+      within(screen.getByRole('listbox', { name: 'Songs' })).getAllByRole(
+        'option',
+      )[0],
+    ).toHaveTextContent('Song 1 Copy');
+    await user.click(within(inspector).getByRole('button', { name: 'Delete' }));
+    expect(
+      within(screen.getByRole('listbox', { name: 'Songs' })).getAllByRole(
+        'option',
+      ),
+    ).toHaveLength(1);
+
+    await user.click(screen.getByRole('tab', { name: 'Scene timeline' }));
+    expect(
+      screen.getByRole('tabpanel', { name: 'Scene timeline' }),
+    ).toHaveTextContent('Scene 1');
   });
 
   it('edits the project name as one undoable command', async () => {

@@ -3,6 +3,8 @@ import { z } from 'zod';
 export const PROJECT_SCHEMA_VERSION = 2 as const;
 
 export const PROJECT_LIMITS = {
+  cueLoops: 4096,
+  cuesPerSong: 512,
   fileBytes: 32 * 1024 * 1024,
   groups: 256,
   keyframesPerTrack: 4096,
@@ -10,6 +12,7 @@ export const PROJECT_LIMITS = {
   loopLengthBeats: 4096,
   paletteTokens: 256,
   scenes: 256,
+  songs: 256,
   totalEntities: 50_000,
 } as const;
 
@@ -373,9 +376,45 @@ export const SceneSchema = z
   })
   .strict();
 
-const ReservedSequenceSchema = z
-  .array(z.never())
-  .max(0, 'This collection is reserved and must remain empty');
+export const SongLaunchQuantizationSchema = z.enum([
+  'immediate',
+  'next-beat',
+  'next-bar',
+]);
+
+export const CueAdvanceSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('manual') }).strict(),
+  z
+    .object({
+      kind: z.literal('after-loops'),
+      loopCount: z.number().int().min(1).max(PROJECT_LIMITS.cueLoops),
+    })
+    .strict(),
+]);
+
+export const SongCueSchema = z
+  .object({
+    advance: CueAdvanceSchema,
+    id: ProjectEntityIdSchema,
+    name: z.string().trim().min(1, 'Cue names cannot be empty'),
+    sceneId: ProjectEntityIdSchema,
+  })
+  .strict();
+
+export const SongSchema = z
+  .object({
+    cues: z
+      .array(SongCueSchema)
+      .max(
+        PROJECT_LIMITS.cuesPerSong,
+        `Songs cannot contain more than ${PROJECT_LIMITS.cuesPerSong} cues`,
+      ),
+    id: ProjectEntityIdSchema,
+    launchQuantization: SongLaunchQuantizationSchema,
+    name: z.string().trim().min(1, 'Song names cannot be empty'),
+    timing: ProjectTimingSchema,
+  })
+  .strict();
 
 export const ProjectSchema = z
   .object({
@@ -397,7 +436,12 @@ export const ProjectSchema = z
         PROJECT_LIMITS.scenes,
         `Projects cannot contain more than ${PROJECT_LIMITS.scenes} scenes`,
       ),
-    sequence: ReservedSequenceSchema,
+    songs: z
+      .array(SongSchema)
+      .max(
+        PROJECT_LIMITS.songs,
+        `Projects cannot contain more than ${PROJECT_LIMITS.songs} songs`,
+      ),
     groups: z
       .array(ProjectGroupSchema)
       .max(
@@ -411,6 +455,10 @@ export const ProjectSchema = z
     const totalEntities =
       project.palette.length +
       project.groups.length +
+      project.songs.reduce(
+        (songTotal, song) => songTotal + 1 + song.cues.length,
+        0,
+      ) +
       project.scenes.reduce(
         (sceneTotal, scene) =>
           sceneTotal +
@@ -648,6 +696,59 @@ export const ProjectSchema = z
         }
       });
     });
+
+    const sceneIds = new Set(project.scenes.map((scene) => scene.id));
+    const songNames = new Set<string>();
+    project.songs.forEach((song, songIndex) => {
+      if (entityIds.has(song.id)) {
+        context.addIssue({
+          code: 'custom',
+          message: `Entity ID "${song.id}" is already in use`,
+          path: ['songs', songIndex, 'id'],
+        });
+      }
+      entityIds.add(song.id);
+
+      const songName = song.name.toLowerCase();
+      if (songNames.has(songName)) {
+        context.addIssue({
+          code: 'custom',
+          message: `Song name "${song.name}" is already in use`,
+          path: ['songs', songIndex, 'name'],
+        });
+      }
+      songNames.add(songName);
+
+      const cueNames = new Set<string>();
+      song.cues.forEach((cue, cueIndex) => {
+        if (entityIds.has(cue.id)) {
+          context.addIssue({
+            code: 'custom',
+            message: `Entity ID "${cue.id}" is already in use`,
+            path: ['songs', songIndex, 'cues', cueIndex, 'id'],
+          });
+        }
+        entityIds.add(cue.id);
+
+        const cueName = cue.name.toLowerCase();
+        if (cueNames.has(cueName)) {
+          context.addIssue({
+            code: 'custom',
+            message: `Cue name "${cue.name}" is already in use`,
+            path: ['songs', songIndex, 'cues', cueIndex, 'name'],
+          });
+        }
+        cueNames.add(cueName);
+
+        if (!sceneIds.has(cue.sceneId)) {
+          context.addIssue({
+            code: 'custom',
+            message: `Cue references unknown scene "${cue.sceneId}"`,
+            path: ['songs', songIndex, 'cues', cueIndex, 'sceneId'],
+          });
+        }
+      });
+    });
   });
 
 export type BrightnessKeyframe = z.infer<typeof BrightnessKeyframeSchema>;
@@ -668,6 +769,12 @@ export type ProjectTiming = z.infer<typeof ProjectTimingSchema>;
 export type ProjectGroup = z.infer<typeof ProjectGroupSchema>;
 export type PulseEffect = z.infer<typeof PulseEffectSchema>;
 export type SparkleEffect = z.infer<typeof SparkleEffectSchema>;
+export type CueAdvance = z.infer<typeof CueAdvanceSchema>;
+export type Song = z.infer<typeof SongSchema>;
+export type SongCue = z.infer<typeof SongCueSchema>;
+export type SongLaunchQuantization = z.infer<
+  typeof SongLaunchQuantizationSchema
+>;
 export type WaveEffect = z.infer<typeof WaveEffectSchema>;
 export type Scene = z.infer<typeof SceneSchema>;
 export type SceneLayer = z.infer<typeof SceneLayerSchema>;

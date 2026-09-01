@@ -24,6 +24,10 @@ import {
   createPaletteTokenDuplicatedCommand,
   createSceneAddedCommand,
   createSceneDuplicatedCommand,
+  createSongAddedCommand,
+  createSongCueAddedCommand,
+  createSongCueDuplicatedCommand,
+  createSongDuplicatedCommand,
   EditorCommandError,
   executeEditorCommand,
   nextAvailableKeyframeBeat,
@@ -48,6 +52,10 @@ const BRIGHTNESS_KEY_ID = '11111111-1111-4111-8111-111111111111';
 const BRIGHTNESS_KEY_2_ID = '22222222-2222-4222-8222-222222222222';
 const COLOUR_KEY_ID = '33333333-3333-4333-8333-333333333333';
 const KEY_COPY_ID = '44444444-4444-4444-8444-444444444444';
+const SONG_ID = '55555555-5555-4555-8555-555555555555';
+const SONG_COPY_ID = '66666666-6666-4666-8666-666666666666';
+const CUE_ID = '77777777-7777-4777-8777-777777777777';
+const CUE_COPY_ID = '88888888-8888-4888-8888-888888888888';
 
 function ids(...values: string[]): ProjectEntityIdFactory {
   let index = 0;
@@ -68,7 +76,7 @@ function projectWithPalette(): Project {
       { id: BLACK_ID, name: 'Black', value: '#000000' },
     ],
     scenes: [],
-    sequence: [],
+    songs: [],
     groups: [],
     timing: {
       previewBpm: 120,
@@ -86,7 +94,7 @@ describe('default project creation', () => {
   it('creates a valid white scene covering every profile LED', () => {
     const project = createDefaultProject(
       { name: 'Untitled Project', profile: kmsFourString10LedProfile },
-      ids(HOT_PINK_ID, SCENE_ID),
+      ids(HOT_PINK_ID, SCENE_ID, SONG_ID, CUE_ID),
     );
 
     expect(project.palette).toEqual([
@@ -100,6 +108,22 @@ describe('default project creation', () => {
     expect(Object.keys(project.scenes[0].ledStates)).toEqual(
       kmsFourString10LedProfile.leds.map(({ id }) => id),
     );
+    expect(project.songs).toEqual([
+      {
+        cues: [
+          {
+            advance: { kind: 'manual' },
+            id: CUE_ID,
+            name: 'Scene 1',
+            sceneId: SCENE_ID,
+          },
+        ],
+        id: SONG_ID,
+        launchQuantization: 'next-bar',
+        name: 'Song 1',
+        timing: project.timing,
+      },
+    ]);
     expect(
       Object.values(project.scenes[0].ledStates).every(
         (state) =>
@@ -197,6 +221,104 @@ describe('editor commands', () => {
       type: 'scene-deleted',
     });
     expect(project.scenes.map(({ id }) => id)).toEqual([SCENE_COPY_ID]);
+    expectValid(project);
+  });
+
+  it('creates, edits, orders, duplicates, and deletes songs and cues', () => {
+    let project = applyEditorCommand(
+      projectWithPalette(),
+      createSceneAddedCommand(projectWithPalette(), ids(SCENE_ID)),
+    );
+    project = applyEditorCommand(
+      project,
+      createSongAddedCommand(project, ids(SONG_ID)),
+    );
+    project = applyEditorCommand(
+      project,
+      createSongCueAddedCommand(project, SONG_ID, SCENE_ID, ids(CUE_ID)),
+    );
+    project = applyEditorCommand(project, {
+      changes: {
+        advance: { kind: 'after-loops', loopCount: 2 },
+        name: 'Intro',
+      },
+      id: CUE_ID,
+      songId: SONG_ID,
+      type: 'song-cue-updated',
+    });
+    project = applyEditorCommand(
+      project,
+      createSongCueDuplicatedCommand(
+        project,
+        SONG_ID,
+        CUE_ID,
+        ids(CUE_COPY_ID),
+      ),
+    );
+    project = applyEditorCommand(
+      project,
+      createSongDuplicatedCommand(
+        project,
+        SONG_ID,
+        ids(
+          CUE_ID.replace(/^7/, '9'),
+          CUE_COPY_ID.replace(/^8/, 'a'),
+          SONG_COPY_ID,
+        ),
+      ),
+    );
+
+    expect(project.songs[0]).toMatchObject({
+      launchQuantization: 'next-bar',
+      name: 'Song 1',
+      cues: [
+        { name: 'Intro', advance: { kind: 'after-loops', loopCount: 2 } },
+        { name: 'Intro Copy' },
+      ],
+    });
+    expect(project.songs[1]).toMatchObject({ name: 'Song 1 Copy' });
+    expectValid(project);
+
+    project = applyEditorCommand(project, {
+      id: CUE_COPY_ID,
+      songId: SONG_ID,
+      toIndex: 0,
+      type: 'song-cue-moved',
+    });
+    expect(project.songs[0].cues[0].id).toBe(CUE_COPY_ID);
+    project = applyEditorCommand(project, {
+      id: CUE_COPY_ID,
+      songId: SONG_ID,
+      toIndex: 1,
+      type: 'song-cue-moved',
+    });
+    project = applyEditorCommand(project, {
+      id: SONG_COPY_ID,
+      toIndex: 0,
+      type: 'song-moved',
+    });
+    expect(project.songs[0].id).toBe(SONG_COPY_ID);
+    project = applyEditorCommand(project, {
+      id: SONG_COPY_ID,
+      toIndex: 1,
+      type: 'song-moved',
+    });
+
+    expect(() =>
+      applyEditorCommand(project, { id: SCENE_ID, type: 'scene-deleted' }),
+    ).toThrowError(EditorCommandError);
+
+    project = applyEditorCommand(project, {
+      id: SONG_COPY_ID,
+      type: 'song-deleted',
+    });
+    project = applyEditorCommand(project, {
+      id: CUE_COPY_ID,
+      songId: SONG_ID,
+      type: 'song-cue-deleted',
+    });
+    expect(project.songs).toHaveLength(1);
+    expect(project.songs[0].cues).toHaveLength(1);
     expectValid(project);
   });
 

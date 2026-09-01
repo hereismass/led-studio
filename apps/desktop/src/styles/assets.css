@@ -63,10 +63,55 @@
 
 .asset-palette-list,
 .asset-scene-list,
+.asset-song-list,
 .asset-group-list {
   display: grid;
   gap: 5px;
   margin-top: 9px;
+}
+
+.asset-song {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 8px;
+  padding: 8px;
+  color: inherit;
+  text-align: left;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.asset-song:hover,
+.asset-song[aria-selected='true'] {
+  border-color: rgba(255, 43, 154, 0.4);
+  background: rgba(255, 43, 154, 0.07);
+}
+
+.asset-song[aria-selected='true'] {
+  box-shadow: inset 2px 0 #ff2b9a;
+}
+
+.asset-song-icon {
+  color: #ff2b9a;
+  font-size: 0.58rem;
+}
+
+.asset-song strong,
+.asset-song small {
+  display: block;
+}
+
+.asset-song strong {
+  font-size: 0.7rem;
+}
+
+.asset-song small {
+  margin-top: 2px;
+  color: #77707f;
+  font-size: 0.58rem;
 }
 
 .asset-scene {

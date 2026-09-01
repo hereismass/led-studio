@@ -10,26 +10,37 @@ import type {
   ProjectTiming,
   Scene,
   SceneLayer,
+  Song,
+  SongCue,
 } from '@led-studio/project-format';
 import type { PreviewPlaybackController } from '@/features/playback/previewPlayback';
 import { SceneTimeline } from './SceneTimeline';
+import { SongCueTimeline } from './SongCueTimeline';
 import type { TimelineSnap, TimelineZoomMode } from './timelinePreferences';
 
 interface TimelinePanelProps {
+  activeTab: 'scene' | 'song';
+  activeCueId: string | null;
   collapsed: boolean;
   canAddEffect: boolean;
   controller: PreviewPlaybackController;
   expandedKeyframeLayerIds: string[];
   palette: readonly PaletteToken[];
   scene: Scene | null;
+  scenes: readonly Scene[];
+  song: Song | null;
   timing: ProjectTiming;
   selectedKeyframes: readonly KeyframeReference[];
   selectedLayerId: string | null;
   snap: TimelineSnap;
   timelinePixelsPerBeat: number;
   timelineZoomMode: TimelineZoomMode;
+  onAddCue: (sceneId: string) => void;
   onAddKeyframe: (layerId: string, beat: number, value: KeyframeValue) => void;
   onAddLayer: (type: SceneLayerTemplateId) => void;
+  onDeleteCue: (id: string) => void;
+  onDuplicateCue: (id: string) => void;
+  onMoveCue: (id: string, toIndex: number) => void;
   onMoveLayer: (id: string, toIndex: number) => void;
   onKeyframeAction: (
     action: 'copy' | 'cut' | 'delete' | 'duplicate' | 'paste',
@@ -40,6 +51,7 @@ interface TimelinePanelProps {
     action: 'copy' | 'cut' | 'delete' | 'duplicate' | 'paste',
     layerId: string,
   ) => void;
+  onSelectCue: (id: string) => void;
   onSelectKeyframes: (
     layerId: string,
     keyframes: KeyframeReference[],
@@ -50,6 +62,10 @@ interface TimelinePanelProps {
   onTimelinePixelsPerBeatChange: (value: number) => void;
   onTimelineSnapChange: (value: TimelineSnap) => void;
   onTimelineZoomModeChange: (value: TimelineZoomMode) => void;
+  onUpdateCue: (
+    id: string,
+    changes: Partial<Pick<SongCue, 'advance' | 'name' | 'sceneId'>>,
+  ) => void;
   onUpdateKeyframes: (
     layerId: string,
     keyframes: KeyframeMove[],
@@ -61,49 +77,62 @@ interface TimelinePanelProps {
     options?: ExecuteEditorCommandOptions,
   ) => void;
   onToggle: () => void;
+  onTabChange: (tab: 'scene' | 'song') => void;
 }
 
-export function TimelinePanel({
-  canAddEffect,
-  collapsed,
-  controller,
-  expandedKeyframeLayerIds,
-  palette,
-  onToggle,
-  scene,
-  selectedKeyframes,
-  selectedLayerId,
-  timing,
-  onAddKeyframe,
-  onAddLayer,
-  onMoveLayer,
-  onKeyframeAction,
-  onLayerAction,
-  onSelectKeyframes,
-  onSelectLayer,
-  onToggleKeyframeLayer,
-  onTimelinePixelsPerBeatChange,
-  onTimelineSnapChange,
-  onTimelineZoomModeChange,
-  onUpdateKeyframes,
-  onUpdateLayer,
-  snap,
-  timelinePixelsPerBeat,
-  timelineZoomMode,
-}: TimelinePanelProps) {
+export function TimelinePanel(props: TimelinePanelProps) {
+  const {
+    activeCueId,
+    activeTab,
+    canAddEffect,
+    collapsed,
+    controller,
+    expandedKeyframeLayerIds,
+    palette,
+    scene,
+    scenes,
+    selectedKeyframes,
+    selectedLayerId,
+    snap,
+    song,
+    timelinePixelsPerBeat,
+    timelineZoomMode,
+    timing,
+  } = props;
+
   return (
     <section
       className={`timeline-panel ${collapsed ? 'timeline-panel-collapsed' : ''}`}
       aria-label="Timeline"
     >
-      <div className="timeline-tabs">
-        <strong>Scene timeline</strong>
+      <div
+        className="timeline-tabs"
+        role="tablist"
+        aria-label="Editor timeline"
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'scene'}
+          onClick={() => props.onTabChange('scene')}
+        >
+          Scene timeline
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === 'song'}
+          disabled={!song}
+          onClick={() => props.onTabChange('song')}
+        >
+          Song cues
+        </button>
         <button
           className="timeline-collapse-button"
           type="button"
           aria-label={collapsed ? 'Expand timeline' : 'Collapse timeline'}
           title={collapsed ? 'Expand timeline' : 'Collapse timeline'}
-          onClick={onToggle}
+          onClick={props.onToggle}
         >
           {collapsed ? '⌃' : '⌄'}
         </button>
@@ -112,9 +141,21 @@ export function TimelinePanel({
         <div
           className="timeline-content"
           role="tabpanel"
-          aria-label="Scene timeline"
+          aria-label={activeTab === 'scene' ? 'Scene timeline' : 'Song cues'}
         >
-          {scene ? (
+          {activeTab === 'song' && song ? (
+            <SongCueTimeline
+              activeCueId={activeCueId}
+              scenes={scenes}
+              song={song}
+              onAddCue={props.onAddCue}
+              onDeleteCue={props.onDeleteCue}
+              onDuplicateCue={props.onDuplicateCue}
+              onMoveCue={props.onMoveCue}
+              onSelectCue={props.onSelectCue}
+              onUpdateCue={props.onUpdateCue}
+            />
+          ) : scene ? (
             <SceneTimeline
               canAddEffect={canAddEffect}
               controller={controller}
@@ -127,19 +168,21 @@ export function TimelinePanel({
               timing={timing}
               timelinePixelsPerBeat={timelinePixelsPerBeat}
               timelineZoomMode={timelineZoomMode}
-              onAddKeyframe={onAddKeyframe}
-              onAddLayer={onAddLayer}
-              onMoveLayer={onMoveLayer}
-              onKeyframeAction={onKeyframeAction}
-              onLayerAction={onLayerAction}
-              onSelectKeyframes={onSelectKeyframes}
-              onSelectLayer={onSelectLayer}
-              onToggleKeyframeLayer={onToggleKeyframeLayer}
-              onTimelinePixelsPerBeatChange={onTimelinePixelsPerBeatChange}
-              onTimelineSnapChange={onTimelineSnapChange}
-              onTimelineZoomModeChange={onTimelineZoomModeChange}
-              onUpdateKeyframes={onUpdateKeyframes}
-              onUpdateLayer={onUpdateLayer}
+              onAddKeyframe={props.onAddKeyframe}
+              onAddLayer={props.onAddLayer}
+              onMoveLayer={props.onMoveLayer}
+              onKeyframeAction={props.onKeyframeAction}
+              onLayerAction={props.onLayerAction}
+              onSelectKeyframes={props.onSelectKeyframes}
+              onSelectLayer={props.onSelectLayer}
+              onToggleKeyframeLayer={props.onToggleKeyframeLayer}
+              onTimelinePixelsPerBeatChange={
+                props.onTimelinePixelsPerBeatChange
+              }
+              onTimelineSnapChange={props.onTimelineSnapChange}
+              onTimelineZoomModeChange={props.onTimelineZoomModeChange}
+              onUpdateKeyframes={props.onUpdateKeyframes}
+              onUpdateLayer={props.onUpdateLayer}
             />
           ) : (
             <div className="panel-placeholder">

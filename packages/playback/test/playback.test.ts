@@ -1,14 +1,17 @@
 import { kmsFourString10LedProfile } from '@led-studio/hardware-profiles';
-import type { PaletteToken, Scene } from '@led-studio/project-format';
+import type { PaletteToken, Scene, Song } from '@led-studio/project-format';
 import { describe, expect, it } from 'vitest';
 import {
   advanceLoopPosition,
+  advanceSongPlaybackState,
   applyKeyframeEasing,
   compileSceneEvaluator,
+  createSongPlaybackState,
   evaluateBrightnessTrack,
   evaluateColourTrack,
   evaluateSceneFrame,
   keyframesInActiveWindow,
+  launchSongCue,
   normalizeLoopPosition,
   sparkleHash32,
 } from '../src/index.js';
@@ -52,6 +55,96 @@ describe('loop timing', () => {
     expect(() => normalizeLoopPosition(0, 0)).toThrow(/positive/);
     expect(() => advanceLoopPosition(0, -1, 120, 4)).toThrow(/non-negative/);
     expect(() => advanceLoopPosition(0, 1, 0, 4)).toThrow(/positive/);
+  });
+});
+
+describe('song playback', () => {
+  const secondScene: Scene = {
+    ...scene,
+    id: '87f41d2e-6075-49a8-a3ed-928586d3d73e',
+    loopLengthBeats: 2,
+    name: 'Scene 2',
+  };
+  const song: Song = {
+    cues: [
+      {
+        advance: { kind: 'after-loops', loopCount: 2 },
+        id: '11111111-1111-4111-8111-111111111111',
+        name: 'Intro',
+        sceneId: scene.id,
+      },
+      {
+        advance: { kind: 'after-loops', loopCount: 1 },
+        id: '22222222-2222-4222-8222-222222222222',
+        name: 'Outro',
+        sceneId: secondScene.id,
+      },
+    ],
+    id: '33333333-3333-4333-8333-333333333333',
+    launchQuantization: 'next-bar',
+    name: 'Song 1',
+    timing: {
+      previewBpm: 120,
+      timeSignature: { denominator: 4, numerator: 4 },
+    },
+  };
+
+  it('advances automatic cues after their configured scene loops', () => {
+    const initial = createSongPlaybackState(song);
+    const beforeBoundary = advanceSongPlaybackState(
+      song,
+      [scene, secondScene],
+      initial,
+      7.5,
+    );
+    expect(beforeBoundary).toMatchObject({
+      activeCueId: song.cues[0].id,
+      completedLoops: 1,
+      cuePositionBeats: 3.5,
+    });
+
+    const advanced = advanceSongPlaybackState(
+      song,
+      [scene, secondScene],
+      beforeBoundary,
+      1,
+    );
+    expect(advanced).toMatchObject({
+      activeCueId: song.cues[1].id,
+      completedLoops: 0,
+      cuePositionBeats: 0.5,
+    });
+  });
+
+  it('keeps looping and marks a completed final automatic cue as held', () => {
+    const final = launchSongCue(
+      song,
+      createSongPlaybackState(song),
+      song.cues[1].id,
+    );
+    expect(
+      advanceSongPlaybackState(song, [scene, secondScene], final, 4.5),
+    ).toMatchObject({
+      activeCueId: song.cues[1].id,
+      completedLoops: 2,
+      cuePositionBeats: 0.5,
+      finalCueHeld: true,
+    });
+  });
+
+  it('launches a requested cue deterministically', () => {
+    const state = advanceSongPlaybackState(
+      song,
+      [scene, secondScene],
+      createSongPlaybackState(song),
+      3,
+    );
+    expect(launchSongCue(song, state, song.cues[1].id)).toEqual({
+      activeCueId: song.cues[1].id,
+      completedLoops: 0,
+      cuePositionBeats: 0,
+      finalCueHeld: false,
+    });
   });
 });
 

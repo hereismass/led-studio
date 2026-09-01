@@ -2,6 +2,7 @@ import type {
   PaletteToken,
   ProjectGroup,
   Scene,
+  Song,
 } from '@led-studio/project-format';
 import { useEffect, useState } from 'react';
 import type { InspectorTarget } from '@/features/inspector/inspectorTarget';
@@ -17,6 +18,7 @@ export function useWorkspaceSelection(
   scenes: readonly Scene[],
   palette: readonly PaletteToken[],
   groups: readonly ProjectGroup[],
+  songs: readonly Song[],
 ) {
   const initialSceneId = scenes[0]?.id ?? null;
   const [activeSceneId, setActiveSceneId] = useState<string | null>(
@@ -41,6 +43,12 @@ export function useWorkspaceSelection(
       setInspectorTarget(
         nearest ? { id: nearest.id, kind: 'scene' } : { kind: 'project' },
       );
+    }
+    if (
+      inspectorTarget.kind === 'song' &&
+      !songs.some((song) => song.id === inspectorTarget.id)
+    ) {
+      setInspectorTarget({ kind: 'project' });
     }
     if (
       inspectorTarget.kind === 'palette' &&
@@ -114,7 +122,7 @@ export function useWorkspaceSelection(
         setInspectorTarget({ ...inspectorTarget, keyframes: valid, primary });
       }
     }
-  }, [activeSceneId, groups, inspectorTarget, palette, scenes]);
+  }, [activeSceneId, groups, inspectorTarget, palette, scenes, songs]);
 
   return {
     activeSceneId,

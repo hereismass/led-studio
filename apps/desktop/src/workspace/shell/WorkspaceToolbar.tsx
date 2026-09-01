@@ -1,6 +1,6 @@
 import type { EditorCommand } from '@led-studio/editor-core';
 import type { HardwareProfile } from '@led-studio/hardware-profiles';
-import type { Project } from '@led-studio/project-format';
+import type { Project, ProjectTiming } from '@led-studio/project-format';
 import { PlaybackControls } from '@/features/playback/PlaybackControls';
 import type { PreviewPlaybackController } from '@/features/playback/previewPlayback';
 import { ProjectTitleEditor } from '@/features/project-settings/ProjectTitleEditor';
@@ -20,8 +20,10 @@ interface WorkspaceToolbarProps {
   previewController: PreviewPlaybackController;
   profile: HardwareProfile;
   project: Project;
+  timing: ProjectTiming;
   onChooseAnother: () => void;
   onExecuteCommand: (command: EditorCommand) => unknown;
+  onTimingCommit: (changes: Partial<ProjectTiming>) => void;
   onRedo: () => void;
   onSave: () => void;
   onSaveAs: () => void;
@@ -43,6 +45,7 @@ export function WorkspaceToolbar({
   hasActiveScene,
   onChooseAnother,
   onExecuteCommand,
+  onTimingCommit,
   onRedo,
   onSave,
   onSaveAs,
@@ -51,6 +54,7 @@ export function WorkspaceToolbar({
   previewController,
   profile,
   project,
+  timing,
 }: WorkspaceToolbarProps) {
   const isBusy = operation !== 'idle';
   return (
@@ -94,15 +98,7 @@ export function WorkspaceToolbar({
           controller={previewController}
           disabled={!hasActiveScene}
         />
-        <TimingControls
-          timing={project.timing}
-          onCommit={(changes) =>
-            onExecuteCommand({
-              changes,
-              type: 'project-timing-updated',
-            })
-          }
-        />
+        <TimingControls timing={timing} onCommit={onTimingCommit} />
       </div>
 
       <div className="workspace-actions">

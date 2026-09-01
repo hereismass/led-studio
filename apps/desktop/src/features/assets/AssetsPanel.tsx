@@ -2,41 +2,50 @@ import type {
   PaletteToken,
   ProjectGroup,
   Scene,
+  Song,
 } from '@led-studio/project-format';
 import type { KeyboardEvent } from 'react';
 
 interface AssetsPanelProps {
   activeSceneId: string | null;
+  activeSongId: string | null;
   collapsed: boolean;
   groups: readonly ProjectGroup[];
   hasLedSelection: boolean;
   palette: readonly PaletteToken[];
   scenes: readonly Scene[];
+  songs: readonly Song[];
   selectedPaletteId: string | null;
   selectedGroupId: string | null;
   onAddColour: () => void;
   onAddScene: () => void;
+  onAddSong: () => void;
   onAddGroup: () => void;
   onSelectPalette: (id: string) => void;
   onSelectScene: (scene: Scene) => void;
+  onSelectSong: (song: Song) => void;
   onSelectGroup: (group: ProjectGroup) => void;
   onToggle: () => void;
 }
 
 export function AssetsPanel({
   activeSceneId,
+  activeSongId,
   collapsed,
   groups,
   hasLedSelection,
   onAddColour,
   onAddGroup,
   onAddScene,
+  onAddSong,
   onSelectPalette,
   onSelectGroup,
   onSelectScene,
+  onSelectSong,
   onToggle,
   palette,
   scenes,
+  songs,
   selectedGroupId,
   selectedPaletteId,
 }: AssetsPanelProps) {
@@ -83,6 +92,55 @@ export function AssetsPanel({
         </div>
       ) : (
         <div className="assets-content">
+          <section className="asset-section">
+            <div className="asset-section-heading">
+              <h3>Songs</h3>
+              <div>
+                <span>{songs.length}</span>
+                <button
+                  aria-label="Add song"
+                  className="asset-add-button"
+                  type="button"
+                  onClick={onAddSong}
+                >
+                  ＋ Add song
+                </button>
+              </div>
+            </div>
+            {songs.length === 0 ? (
+              <p className="asset-empty-copy">
+                Add a song to arrange shared scenes into cues.
+              </p>
+            ) : (
+              <div
+                className="asset-song-list"
+                role="listbox"
+                aria-label="Songs"
+              >
+                {songs.map((song) => (
+                  <button
+                    className="asset-song"
+                    type="button"
+                    role="option"
+                    aria-selected={activeSongId === song.id}
+                    key={song.id}
+                    onClick={() => onSelectSong(song)}
+                  >
+                    <span className="asset-song-icon" aria-hidden="true">
+                      ▶
+                    </span>
+                    <span>
+                      <strong>{song.name}</strong>
+                      <small>
+                        {song.cues.length}{' '}
+                        {song.cues.length === 1 ? 'cue' : 'cues'}
+                      </small>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
           <section className="asset-section">
             <div className="asset-section-heading">
               <h3>Scenes</h3>

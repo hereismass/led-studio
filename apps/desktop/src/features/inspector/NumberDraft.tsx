@@ -1,6 +1,7 @@
 import { useEffect, useState, type KeyboardEvent } from 'react';
 
 interface NumberDraftProps {
+  displayLabel?: string;
   disabled?: boolean;
   label: string;
   max?: number;
@@ -12,6 +13,7 @@ interface NumberDraftProps {
 
 export function NumberDraft({
   disabled,
+  displayLabel,
   label,
   max,
   min,
@@ -44,7 +46,7 @@ export function NumberDraft({
 
   return (
     <label className="inspector-field">
-      <span>{label}</span>
+      <span>{displayLabel ?? label}</span>
       <input
         aria-label={label}
         disabled={disabled}

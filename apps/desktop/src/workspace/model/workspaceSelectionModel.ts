@@ -15,6 +15,7 @@ import type {
   ProjectGroup,
   Scene,
   SceneLayer,
+  Song,
 } from '@led-studio/project-format';
 import type { InspectorTarget } from '@/features/inspector/inspectorTarget';
 
@@ -32,6 +33,7 @@ export interface WorkspaceSelectionModel {
   selectedLayer: SceneLayer | null;
   selectedLeds: HardwareLed[];
   selectedScene: Scene | null;
+  selectedSong: Song | null;
   selectedToken: PaletteToken | null;
 }
 
@@ -53,6 +55,10 @@ export function deriveWorkspaceSelection(
     inspectorTarget.kind === 'scene'
       ? (project.scenes.find((scene) => scene.id === inspectorTarget.id) ??
         null)
+      : null;
+  const selectedSong =
+    inspectorTarget.kind === 'song'
+      ? (project.songs.find((song) => song.id === inspectorTarget.id) ?? null)
       : null;
   const selectedGroup =
     inspectorTarget.kind === 'group'
@@ -122,6 +128,7 @@ export function deriveWorkspaceSelection(
     selectedLayer,
     selectedLeds: profile.leds.filter((led) => selectedIdSet.has(led.id)),
     selectedScene,
+    selectedSong,
     selectedToken,
   };
 }

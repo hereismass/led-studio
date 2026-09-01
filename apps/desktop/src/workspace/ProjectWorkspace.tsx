@@ -4,6 +4,10 @@ import {
   createSceneLayerAddedCommand,
   createGroupAddedCommand,
   createSceneAddedCommand,
+  createSongAddedCommand,
+  createSongCueAddedCommand,
+  createSongCueDuplicatedCommand,
+  createSongDuplicatedCommand,
   paletteTokenUsageCount,
   projectGroupUsageCount,
   type EditorCommand,
@@ -15,8 +19,9 @@ import type {
   LayerTarget,
   ProjectGroup,
   Scene,
+  Song,
 } from '@led-studio/project-format';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AssetsPanel } from '@/features/assets/AssetsPanel';
 import { InspectorPanel } from '@/features/inspector/InspectorPanel';
 import { useScenePreview } from '@/features/playback/useScenePreview';
@@ -76,6 +81,17 @@ export function ProjectWorkspace({
   const profile = getHardwareProfile(project.hardwareProfile)!;
   const colours = project.palette;
   const scenes = project.scenes;
+  const [activeSongId, setActiveSongId] = useState<string | null>(
+    project.songs[0]?.id ?? null,
+  );
+  const [activeCueId, setActiveCueId] = useState<string | null>(
+    project.songs[0]?.cues[0]?.id ?? null,
+  );
+  const [timelineTab, setTimelineTab] = useState<'scene' | 'song'>('scene');
+  const activeSong =
+    project.songs.find((song) => song.id === activeSongId) ?? null;
+  const transportTiming =
+    timelineTab === 'song' && activeSong ? activeSong.timing : project.timing;
   const {
     activeSceneId,
     focusTokenId,
@@ -87,7 +103,7 @@ export function ProjectWorkspace({
     setInspectorTarget,
     setLedSelectionSource,
     setSelectedLedIds,
-  } = useWorkspaceSelection(scenes, colours, project.groups);
+  } = useWorkspaceSelection(scenes, colours, project.groups, project.songs);
 
   const [expandedKeyframeLayerIds, setExpandedKeyframeLayerIds] = useState<
     string[]
@@ -103,6 +119,7 @@ export function ProjectWorkspace({
     selectedLayer,
     selectedLeds,
     selectedScene,
+    selectedSong,
     selectedToken,
   } = useMemo(
     () =>
@@ -117,8 +134,11 @@ export function ProjectWorkspace({
   );
   const previewController = useScenePreview(
     activeScene,
-    project.timing.previewBpm,
+    transportTiming.previewBpm,
   );
+  const completedCueLoopsRef = useRef(0);
+  const previousPreviewPositionRef = useRef(0);
+  const resumeAfterCueRef = useRef(false);
   const {
     beginResize,
     bottomPanelHeight,
@@ -179,6 +199,77 @@ export function ProjectWorkspace({
     );
   }, [scenes]);
 
+  useEffect(() => {
+    if (activeSongId && !project.songs.some(({ id }) => id === activeSongId)) {
+      const song = project.songs[0] ?? null;
+      setActiveSongId(song?.id ?? null);
+      setActiveCueId(song?.cues[0]?.id ?? null);
+    } else if (
+      activeSong &&
+      activeCueId &&
+      !activeSong.cues.some(({ id }) => id === activeCueId)
+    ) {
+      setActiveCueId(activeSong.cues[0]?.id ?? null);
+    }
+  }, [activeCueId, activeSong, activeSongId, project.songs]);
+
+  useEffect(() => {
+    completedCueLoopsRef.current = 0;
+    previousPreviewPositionRef.current =
+      previewController.getSnapshot().positionBeats;
+  }, [activeCueId, previewController]);
+
+  useEffect(() => {
+    if (!resumeAfterCueRef.current) return;
+    resumeAfterCueRef.current = false;
+    previewController.play();
+  }, [activeSceneId, previewController]);
+
+  useEffect(
+    () =>
+      previewController.subscribe(() => {
+        const snapshot = previewController.getSnapshot();
+        const previous = previousPreviewPositionRef.current;
+        previousPreviewPositionRef.current = snapshot.positionBeats;
+        if (
+          timelineTab !== 'song' ||
+          snapshot.status !== 'playing' ||
+          snapshot.positionBeats >= previous ||
+          !activeSong ||
+          !activeCueId
+        )
+          return;
+        const cueIndex = activeSong.cues.findIndex(
+          ({ id }) => id === activeCueId,
+        );
+        const cue = activeSong.cues[cueIndex];
+        if (!cue || cue.advance.kind !== 'after-loops') return;
+        completedCueLoopsRef.current += 1;
+        if (completedCueLoopsRef.current < cue.advance.loopCount) return;
+        const nextCue = activeSong.cues[cueIndex + 1];
+        if (!nextCue) return;
+        resumeAfterCueRef.current = true;
+        setActiveCueId(nextCue.id);
+        const scene = scenes.find(({ id }) => id === nextCue.sceneId);
+        if (!scene) return;
+        setActiveSceneId(scene.id);
+        setInspectorTarget({ id: activeSong.id, kind: 'song' });
+        setSelectedLedIds([]);
+        setLedSelectionSource({ kind: 'direct' });
+      }),
+    [
+      activeCueId,
+      activeSong,
+      previewController,
+      scenes,
+      setActiveSceneId,
+      setInspectorTarget,
+      setLedSelectionSource,
+      setSelectedLedIds,
+      timelineTab,
+    ],
+  );
+
   function executeAndSelectCreated(
     command: EditorCommand,
     kind: 'palette' | 'scene',
@@ -197,22 +288,116 @@ export function ProjectWorkspace({
     }
   }
 
-  function activateScene(scene: Scene) {
+  function activateScene(scene: Scene, keepSongTimeline = false) {
+    if (!keepSongTimeline) setTimelineTab('scene');
     setActiveSceneId(scene.id);
     setInspectorTarget({ id: scene.id, kind: 'scene' });
     setSelectedLedIds([]);
     setLedSelectionSource({ kind: 'direct' });
   }
 
+  function activateSong(song: Song) {
+    setTimelineTab('song');
+    setActiveSongId(song.id);
+    const cue = song.cues[0] ?? null;
+    setActiveCueId(cue?.id ?? null);
+    const scene = cue
+      ? project.scenes.find(({ id }) => id === cue.sceneId)
+      : null;
+    setActiveSceneId(scene?.id ?? null);
+    setInspectorTarget({ id: song.id, kind: 'song' });
+    setSelectedLedIds([]);
+    setLedSelectionSource({ kind: 'direct' });
+  }
+
+  function activateCue(id: string) {
+    const cue = activeSong?.cues.find((candidate) => candidate.id === id);
+    if (!cue) return;
+    setActiveCueId(cue.id);
+    const scene = scenes.find(({ id: sceneId }) => sceneId === cue.sceneId);
+    setActiveSceneId(scene?.id ?? null);
+    setInspectorTarget({ id: activeSong!.id, kind: 'song' });
+    setSelectedLedIds([]);
+    setLedSelectionSource({ kind: 'direct' });
+  }
+
+  function selectTimelineTab(tab: 'scene' | 'song') {
+    setTimelineTab(tab);
+    if (tab === 'song' && activeSong) {
+      setInspectorTarget({ id: activeSong.id, kind: 'song' });
+    } else if (tab === 'scene' && activeScene) {
+      setInspectorTarget({ id: activeScene.id, kind: 'scene' });
+    }
+  }
+
   function deleteScene(scene: Scene) {
     const index = scenes.findIndex(({ id }) => id === scene.id);
     const nearest = scenes[index + 1] ?? scenes[index - 1] ?? null;
+    const result = onExecuteCommand({ id: scene.id, type: 'scene-deleted' });
+    if (!result.ok || !result.changed) return;
     if (activeSceneId === scene.id) setActiveSceneId(nearest?.id ?? null);
     setInspectorTarget(
       nearest ? { id: nearest.id, kind: 'scene' } : { kind: 'project' },
     );
     setSelectedLedIds([]);
-    onExecuteCommand({ id: scene.id, type: 'scene-deleted' });
+  }
+
+  function deleteSelectedSong() {
+    if (!selectedSong) return;
+    const index = project.songs.findIndex(({ id }) => id === selectedSong.id);
+    const next = project.songs[index + 1] ?? project.songs[index - 1] ?? null;
+    const result = onExecuteCommand({
+      id: selectedSong.id,
+      type: 'song-deleted',
+    });
+    if (!result.ok || !result.changed) return;
+    const nextCue = next?.cues[0] ?? null;
+    const nextScene = nextCue
+      ? scenes.find(({ id }) => id === nextCue.sceneId)
+      : null;
+    setActiveSongId(next?.id ?? null);
+    setActiveCueId(nextCue?.id ?? null);
+    setActiveSceneId(nextScene?.id ?? null);
+    setInspectorTarget(
+      next ? { id: next.id, kind: 'song' } : { kind: 'project' },
+    );
+    if (!next) setTimelineTab('scene');
+  }
+
+  function duplicateSelectedSong() {
+    if (!selectedSong) return;
+    const command = createSongDuplicatedCommand(project, selectedSong.id);
+    const result = onExecuteCommand(command);
+    if (!result.ok || !result.changed) return;
+    const cueId = command.cueIds[0] ?? null;
+    const scene = selectedSong.cues[0]
+      ? scenes.find(({ id }) => id === selectedSong.cues[0].sceneId)
+      : null;
+    setActiveSongId(command.id);
+    setActiveCueId(cueId);
+    setActiveSceneId(scene?.id ?? null);
+    setTimelineTab('song');
+    setInspectorTarget({ id: command.id, kind: 'song' });
+  }
+
+  function moveSelectedSong(toIndex: number) {
+    if (!selectedSong) return;
+    onExecuteCommand({
+      id: selectedSong.id,
+      toIndex,
+      type: 'song-moved',
+    });
+  }
+
+  function updateSelectedSong(
+    changes: Partial<Pick<Song, 'launchQuantization' | 'name' | 'timing'>>,
+  ) {
+    if (!selectedSong) return;
+    onExecuteCommand({
+      changes,
+      id: selectedSong.id,
+      type: 'song-updated',
+    });
   }
 
   function deleteSelectedToken() {
@@ -334,6 +519,23 @@ export function ProjectWorkspace({
         previewController={previewController}
         profile={profile}
         project={project}
+        timing={transportTiming}
+        onTimingCommit={(changes) => {
+          if (timelineTab === 'song' && activeSong) {
+            onExecuteCommand({
+              changes: {
+                timing: { ...activeSong.timing, ...changes },
+              },
+              id: activeSong.id,
+              type: 'song-updated',
+            });
+          } else {
+            onExecuteCommand({
+              changes,
+              type: 'project-timing-updated',
+            });
+          }
+        }}
       />
 
       {saveFeedback ? (
@@ -361,11 +563,15 @@ export function ProjectWorkspace({
       <div className="workspace-editor">
         <AssetsPanel
           activeSceneId={activeSceneId}
+          activeSongId={
+            inspectorTarget.kind === 'song' ? inspectorTarget.id : null
+          }
           collapsed={layout.leftCollapsed}
           groups={project.groups}
           hasLedSelection={selectedLedIds.length > 0}
           palette={colours}
           scenes={scenes}
+          songs={project.songs}
           selectedPaletteId={
             inspectorTarget.kind === 'palette' ? inspectorTarget.id : null
           }
@@ -388,12 +594,23 @@ export function ProjectWorkspace({
             const command = createSceneAddedCommand(project);
             executeAndSelectCreated(command, 'scene', command.id);
           }}
+          onAddSong={() => {
+            const command = createSongAddedCommand(project);
+            const result = onExecuteCommand(command);
+            if (!result.ok || !result.changed) return;
+            setTimelineTab('song');
+            setActiveSongId(command.id);
+            setActiveCueId(null);
+            setActiveSceneId(null);
+            setInspectorTarget({ id: command.id, kind: 'song' });
+          }}
           onSelectPalette={(id) => {
             setInspectorTarget({ id, kind: 'palette' });
             setFocusTokenId(null);
           }}
           onSelectGroup={selectProjectGroup}
           onSelectScene={activateScene}
+          onSelectSong={activateSong}
           onToggle={() => togglePanel('left')}
         />
 
@@ -451,6 +668,7 @@ export function ProjectWorkspace({
           selectedKeyframeReferences={selectedKeyframeReferences}
           selectedKeyframeTrack={selectedKeyframeTrack}
           selectedScene={selectedScene}
+          selectedSong={selectedSong}
           selectedToken={selectedToken}
           tokenUsageCount={
             selectedToken
@@ -462,6 +680,10 @@ export function ProjectWorkspace({
               ? projectGroupUsageCount(project, selectedGroup.id)
               : 0
           }
+          onDeleteSong={deleteSelectedSong}
+          onDuplicateSong={duplicateSelectedSong}
+          onMoveSong={moveSelectedSong}
+          onUpdateSong={updateSelectedSong}
           {...inspectorActions}
           onToggle={() => togglePanel('right')}
         />
@@ -477,12 +699,16 @@ export function ProjectWorkspace({
           value={bottomPanelHeight}
         />
         <TimelinePanel
+          activeCueId={activeCueId}
+          activeTab={timelineTab}
           collapsed={layout.bottomCollapsed}
           canAddEffect={colours.length > 0}
           controller={previewController}
           expandedKeyframeLayerIds={expandedKeyframeLayerIds}
           palette={colours}
           scene={activeScene}
+          scenes={scenes}
+          song={activeSong}
           selectedKeyframes={selectedKeyframeReferences}
           selectedLayerId={
             inspectorTarget.kind === 'layer' ? inspectorTarget.id : null
@@ -510,6 +736,58 @@ export function ProjectWorkspace({
               track: value.track,
             });
           }}
+          onAddCue={(sceneId) => {
+            if (!activeSong) return;
+            const command = createSongCueAddedCommand(
+              project,
+              activeSong.id,
+              sceneId,
+            );
+            const result = onExecuteCommand(command);
+            if (!result.ok || !result.changed) return;
+            setActiveCueId(command.id);
+            const scene = scenes.find(({ id }) => id === sceneId);
+            setActiveSceneId(scene?.id ?? null);
+            setInspectorTarget({ id: activeSong.id, kind: 'song' });
+          }}
+          onDeleteCue={(id) => {
+            if (!activeSong) return;
+            const index = activeSong.cues.findIndex((cue) => cue.id === id);
+            const next =
+              activeSong.cues[index + 1] ?? activeSong.cues[index - 1] ?? null;
+            const result = onExecuteCommand({
+              id,
+              songId: activeSong.id,
+              type: 'song-cue-deleted',
+            });
+            if (result.ok && result.changed) {
+              setActiveCueId(next?.id ?? null);
+              const scene = next
+                ? scenes.find(({ id: sceneId }) => sceneId === next.sceneId)
+                : null;
+              setActiveSceneId(scene?.id ?? null);
+              setInspectorTarget({ id: activeSong.id, kind: 'song' });
+            }
+          }}
+          onDuplicateCue={(id) => {
+            if (!activeSong) return;
+            const command = createSongCueDuplicatedCommand(
+              project,
+              activeSong.id,
+              id,
+            );
+            const result = onExecuteCommand(command);
+            if (result.ok && result.changed) setActiveCueId(command.newId);
+          }}
+          onMoveCue={(id, toIndex) => {
+            if (!activeSong) return;
+            onExecuteCommand({
+              id,
+              songId: activeSong.id,
+              toIndex,
+              type: 'song-cue-moved',
+            });
+          }}
           onAddLayer={addLayer}
           onMoveLayer={(id, toIndex) => {
             if (!activeScene) return;
@@ -530,6 +808,8 @@ export function ProjectWorkspace({
                 sceneId: activeScene.id,
               });
           }}
+          onSelectCue={activateCue}
+          onTabChange={selectTimelineTab}
           onSelectKeyframes={(layerId, keyframes, primary) => {
             if (!activeScene) return;
             setInspectorTarget(
@@ -583,6 +863,20 @@ export function ProjectWorkspace({
               },
               options,
             );
+          }}
+          onUpdateCue={(id, changes) => {
+            if (!activeSong) return;
+            const result = onExecuteCommand({
+              changes,
+              id,
+              songId: activeSong.id,
+              type: 'song-cue-updated',
+            });
+            if (result.ok && result.changed && changes.sceneId) {
+              const scene = scenes.find(({ id }) => id === changes.sceneId);
+              setActiveSceneId(scene?.id ?? null);
+              setInspectorTarget({ id: activeSong.id, kind: 'song' });
+            }
           }}
           onToggle={() => togglePanel('bottom')}
         />

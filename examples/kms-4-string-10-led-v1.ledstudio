@@ -146,7 +146,37 @@
       "ledStates": {}
     }
   ],
-  "sequence": [],
+  "songs": [
+    {
+      "id": "ba8237a1-aaf4-4f0d-a001-b502499fc584",
+      "name": "Example Song",
+      "timing": {
+        "previewBpm": 120,
+        "timeSignature": { "numerator": 4, "denominator": 4 }
+      },
+      "launchQuantization": "next-bar",
+      "cues": [
+        {
+          "id": "26d562f9-9641-4d2f-a6f9-300032188f90",
+          "name": "Marker Intro",
+          "sceneId": "6c21dc04-9a75-4f10-a7bb-9f17dc2fe32a",
+          "advance": { "kind": "after-loops", "loopCount": 2 }
+        },
+        {
+          "id": "e95f03d8-63d9-4982-b7f7-e0eeb2654779",
+          "name": "Rolling Verse",
+          "sceneId": "7f6d8f50-3b47-4ae3-ae96-9ed066b0f630",
+          "advance": { "kind": "after-loops", "loopCount": 4 }
+        },
+        {
+          "id": "28fd586c-8141-460c-8e6a-3a77dc64ca90",
+          "name": "Sparkle Hold",
+          "sceneId": "916fa172-5d69-4c05-80b8-b1f288d21852",
+          "advance": { "kind": "manual" }
+        }
+      ]
+    }
+  ],
   "groups": [
     {
       "id": "ad56c792-07e6-42d7-84fd-0b509289b4ab",

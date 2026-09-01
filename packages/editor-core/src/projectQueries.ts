@@ -5,6 +5,8 @@ export function projectEntityIds(project: Project): Set<string> {
     ...project.palette.map((token) => token.id),
     ...project.groups.map((group) => group.id),
     ...project.scenes.map((scene) => scene.id),
+    ...project.songs.map((song) => song.id),
+    ...project.songs.flatMap((song) => song.cues.map((cue) => cue.id)),
     ...project.scenes.flatMap((scene) => scene.layers.map((layer) => layer.id)),
     ...project.scenes.flatMap((scene) =>
       scene.layers.flatMap((layer) =>
@@ -17,6 +19,14 @@ export function projectEntityIds(project: Project): Set<string> {
       ),
     ),
   ]);
+}
+
+export function sceneCueUsageCount(project: Project, id: string): number {
+  return project.songs.reduce(
+    (total, song) =>
+      total + song.cues.filter((cue) => cue.sceneId === id).length,
+    0,
+  );
 }
 
 export function paletteTokenUsageCount(project: Project, id: string): number {

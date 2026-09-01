@@ -5,6 +5,7 @@ export type InspectorTarget =
   | { id: string; kind: 'palette' }
   | { kind: 'project' }
   | { id: string; kind: 'scene' }
+  | { id: string; kind: 'song' }
   | { id: string; kind: 'group' }
   | { id: string; kind: 'layer'; sceneId: string }
   | {

@@ -2,7 +2,7 @@
 
 ## Summary
 
-Build the editor through runnable, reviewable milestones. Stop after each milestone for UI feedback before its assumptions spread into later features. The active roadmap focuses on scene creation, preview, and animation; show-sequence and external-control work is deferred.
+Build the editor through runnable, reviewable milestones. Stop after each milestone for UI feedback before its assumptions spread into later features. Scene creation, preview, animation, and the shared-scene song/cue model are implemented; external-control work remains deferred.
 
 ## Milestones
 
@@ -32,7 +32,7 @@ Implementation complete; the UI review gate is open for feedback.
   - six-digit uppercase hexadecimal value.
 - Generate opaque IDs when tokens are created or duplicated; subsequent renames do not change IDs.
 - Add palette create, edit, duplicate, and delete operations through the left panel and inspector. Palette reordering is deliberately deferred until ordering has an editor-visible purpose.
-- Introduce project format v2 with empty collections reserved for scenes, sequence items, and groups. Reject v1 files without migration and update all examples.
+- Introduce project format v2 with collections for scenes and groups. Reject v1 files without migration and update all examples. The active v2 format later replaced its sequence placeholder with songs and cues.
 - Review gate: token editing, inspector behavior, compactness, and undo/redo expectations.
 
 ### 3. Hardware profile and static scene editor
@@ -138,7 +138,7 @@ Implementation complete; the easing presets and timeline-curve review gate is op
 - Edit easing from single- and multi-key inspectors, with terminal, stepped-colour, and locked states explained explicitly.
 - Preserve easing through keyframe and layer duplication, session clipboard operations, and atomic multi-key commands.
 - Sample eased brightness curves and colour gradients from the same playback functions while retaining viewport-bounded timeline work.
-- Keep freeform curve handles, additional effects, blend modes, sequences, and external control deferred.
+- Keep freeform curve handles, additional effects, blend modes, song arrangement, and external control deferred at this review gate.
 - Review gate: preset usefulness, curve readability, bulk-edit behavior, and whether custom curves are ever justified.
 
 ### 9. Spatial animation tools
@@ -155,9 +155,9 @@ Implementation complete; the Wave, Sparkle, and quick-start preset review gate i
 
 ## Deferred work
 
-- Revisit the reserved `sequence` collection only after the scene and animation workflow is established.
-- Decide whether sequence order represents a MIDI-selectable scene bank, an automatic show, a song model, or separate concepts before adding UI or persisted data.
-- Define MIDI mapping, external clock behavior, scene-switch transitions, ordering, and deletion safeguards together rather than baking those assumptions into the scene editor now.
+- Add setlists only when controller navigation requirements need an order distinct from the project's song order.
+- Define MIDI mappings as a separate controller-facing layer that can launch songs immediately or respect each song's launch quantization.
+- Define external clock behavior, scene transitions, footswitch actions, and bass-package compilation without coupling those protocols to the project editor UI.
 
 ## Interfaces and architecture
 
@@ -165,7 +165,7 @@ Implementation complete; the Wave, Sparkle, and quick-start preset review gate i
 - React owns workspace presentation and user interaction; Tauri continues to own native dialogs and file persistence.
 - Local workspace preferences use a versioned app-preference key and never enter project files.
 - Format v2 remains the active development format and may change without migration until a compatibility policy is explicitly introduced.
-- Scene time uses beat-relative positions. Sequence editing, MIDI input, hardware communication, firmware, and export remain out of scope until their dedicated milestones.
+- Scene and song time use beat-relative positions. MIDI input, hardware communication, firmware, and export remain out of scope until their dedicated milestones.
 
 ## Test plan
 

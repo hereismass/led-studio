@@ -42,7 +42,7 @@ const validProject: Project = {
     { id: BLACK_ID, name: 'Black', value: '#000000' },
   ],
   scenes: [],
-  sequence: [],
+  songs: [],
   groups: [],
   timing: {
     previewBpm: 120,
@@ -146,9 +146,72 @@ describe('ProjectSchema', () => {
     ).toBe(false);
   });
 
-  it('requires the reserved sequence collection to remain empty', () => {
+  it('accepts songs with shared-scene cues and validates references', () => {
+    const scene = {
+      id: '6c21dc04-9a75-4f10-a7bb-9f17dc2fe32a',
+      layers: [],
+      ledStates: {},
+      loopLengthBeats: 4,
+      name: 'Shared Scene',
+    };
+    const song = {
+      cues: [
+        {
+          advance: { kind: 'after-loops', loopCount: 4 },
+          id: '710c1ddd-baea-45e7-9725-f5b63b9869b0',
+          name: 'Intro',
+          sceneId: scene.id,
+        },
+      ],
+      id: '68aa8c7d-ff65-4dbf-ac48-a9d960862a67',
+      launchQuantization: 'next-bar',
+      name: 'Song 1',
+      timing: validProject.timing,
+    };
     expect(
-      ProjectSchema.safeParse({ ...validProject, sequence: [{}] }).success,
+      parseProject({ ...validProject, scenes: [scene], songs: [song] }).songs,
+    ).toEqual([song]);
+    expect(
+      ProjectSchema.safeParse({
+        ...validProject,
+        scenes: [scene],
+        songs: [
+          {
+            ...song,
+            cues: [{ ...song.cues[0], sceneId: generatedId(999) }],
+          },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      ProjectSchema.safeParse({
+        ...validProject,
+        scenes: [scene],
+        songs: [
+          {
+            ...song,
+            cues: [song.cues[0], { ...song.cues[0], name: ' intro ' }],
+          },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      ProjectSchema.safeParse({
+        ...validProject,
+        scenes: [scene],
+        songs: [
+          {
+            ...song,
+            launchQuantization: 'next-sixteenth',
+            cues: [
+              {
+                ...song.cues[0],
+                advance: { kind: 'after-loops', loopCount: 0 },
+              },
+            ],
+          },
+        ],
+      }).success,
     ).toBe(false);
   });
 

@@ -32,6 +32,7 @@
 }
 
 .scene-inspector,
+.song-inspector,
 .led-inspector,
 .group-inspector,
 .layer-inspector,
@@ -41,12 +42,28 @@
 }
 
 .scene-inspector h3,
+.song-inspector h3,
 .led-inspector h3,
 .group-inspector h3,
 .layer-inspector h3,
 .keyframe-inspector h3 {
   margin-top: 4px;
   font-size: 0.83rem;
+}
+
+.song-inspector-timing {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.song-inspector-timing .choice-menu-trigger {
+  min-height: 34px;
+  background: #17151b;
+}
+
+.song-inspector-order-actions {
+  margin-top: 2px;
 }
 
 .selection-labels,

@@ -8,6 +8,7 @@ import type {
   PaletteToken,
   ProjectGroup,
   Scene,
+  Song,
 } from '@led-studio/project-format';
 
 export interface EvaluatedLed {
@@ -23,6 +24,93 @@ export interface SceneEvaluator {
   readonly frame: LedFrame;
   readonly isDynamic: boolean;
   getFrame(positionBeats: number): LedFrame;
+}
+
+export interface SongPlaybackState {
+  activeCueId: string | null;
+  completedLoops: number;
+  cuePositionBeats: number;
+  finalCueHeld: boolean;
+}
+
+export function createSongPlaybackState(song: Song): SongPlaybackState {
+  return {
+    activeCueId: song.cues[0]?.id ?? null,
+    completedLoops: 0,
+    cuePositionBeats: 0,
+    finalCueHeld: false,
+  };
+}
+
+export function launchSongCue(
+  song: Song,
+  state: SongPlaybackState,
+  cueId: string,
+): SongPlaybackState {
+  if (!song.cues.some((cue) => cue.id === cueId)) {
+    throw new Error(`Song "${song.name}" does not contain cue "${cueId}"`);
+  }
+  return {
+    activeCueId: cueId,
+    completedLoops: 0,
+    cuePositionBeats: 0,
+    finalCueHeld: false,
+  };
+}
+
+export function advanceSongPlaybackState(
+  song: Song,
+  scenes: readonly Scene[],
+  state: SongPlaybackState,
+  elapsedBeats: number,
+): SongPlaybackState {
+  if (!Number.isFinite(elapsedBeats) || elapsedBeats < 0)
+    throw new RangeError('Elapsed beats must be finite and non-negative');
+  if (state.activeCueId === null || elapsedBeats === 0) return state;
+
+  const scenesById = new Map(scenes.map((scene) => [scene.id, scene]));
+  let remaining = elapsedBeats;
+  let next = { ...state };
+  let transitions = 0;
+  while (remaining > 0) {
+    const cueIndex = song.cues.findIndex(({ id }) => id === next.activeCueId);
+    if (cueIndex === -1)
+      throw new Error(
+        `Song "${song.name}" does not contain active cue "${next.activeCueId}"`,
+      );
+    const cue = song.cues[cueIndex];
+    const scene = scenesById.get(cue.sceneId);
+    if (!scene)
+      throw new Error(`Cue "${cue.name}" references an unknown scene`);
+    const untilLoopEnd = scene.loopLengthBeats - next.cuePositionBeats;
+    if (remaining < untilLoopEnd) {
+      next.cuePositionBeats += remaining;
+      remaining = 0;
+      break;
+    }
+
+    remaining -= untilLoopEnd;
+    next.cuePositionBeats = 0;
+    next.completedLoops += 1;
+    if (
+      cue.advance.kind === 'after-loops' &&
+      next.completedLoops >= cue.advance.loopCount
+    ) {
+      const followingCue = song.cues[cueIndex + 1];
+      if (followingCue) {
+        next = launchSongCue(song, next, followingCue.id);
+      } else {
+        next.finalCueHeld = true;
+      }
+    }
+
+    transitions += 1;
+    if (transitions > 100_000)
+      throw new RangeError(
+        'Playback advance contains too many loop transitions',
+      );
+  }
+  return next;
 }
 
 const UINT32_RANGE = 0x1_0000_0000;

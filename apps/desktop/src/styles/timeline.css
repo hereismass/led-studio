@@ -59,6 +59,198 @@
     #141218;
 }
 
+.song-cue-timeline {
+  height: 100%;
+  padding: 14px 18px 20px;
+  overflow: auto;
+}
+
+.song-cue-header {
+  position: sticky;
+  z-index: 20;
+  top: -14px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 0;
+  background: #141218;
+}
+
+.song-cue-heading-copy,
+.song-cue-name,
+.song-cue-scene,
+.song-cue-advance,
+.song-loop-count {
+  display: grid;
+  gap: 5px;
+}
+
+.song-cue-heading-copy span,
+.song-cue-card label > span,
+.song-cue-scene > span,
+.song-cue-advance > span,
+.song-loop-count > span {
+  color: #817987;
+  font-size: 0.58rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.song-cue-card input {
+  min-height: 30px;
+  padding: 5px 8px;
+  border: 1px solid #443e49;
+  border-radius: 6px;
+  color: #e7e0ea;
+  background: #211e25;
+}
+
+.song-cue-heading-copy strong {
+  color: #e9e3ed;
+  font-size: 0.75rem;
+}
+
+.song-cue-advance .segmented-control button {
+  min-height: 30px;
+}
+
+.song-add-cue {
+  width: 120px;
+  margin-left: auto;
+}
+
+.song-add-cue .choice-menu-trigger,
+.song-cue-scene .choice-menu-trigger {
+  min-height: 30px;
+  border: 1px solid #443e49;
+  background: #211e25;
+}
+
+.song-cue-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.song-cue-card {
+  display: grid;
+  grid-template-columns:
+    36px minmax(140px, 1fr) minmax(180px, 1.15fr) 174px 70px
+    230px;
+  align-items: end;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid #332f39;
+  border-radius: 9px;
+  background: #1b181f;
+}
+
+.song-cue-card[data-active='true'] {
+  border-color: rgba(69, 255, 114, 0.5);
+  box-shadow: inset 3px 0 #45ff72;
+}
+
+.song-cue-index {
+  width: 32px;
+  height: 32px;
+  border-color: #48414f;
+  border-radius: 50%;
+  color: #d9d2de;
+  background: #29252e;
+}
+
+.song-cue-card[data-active='true'] .song-cue-index {
+  color: #08140b;
+  border-color: #45ff72;
+  background: #45ff72;
+}
+
+.song-cue-advance {
+  min-width: 0;
+}
+
+.song-loop-count input {
+  width: 100%;
+}
+
+.song-loop-count-empty output {
+  display: grid;
+  min-height: 30px;
+  padding: 5px 8px;
+  place-items: center;
+  color: #6f6876;
+  border: 1px solid #332f39;
+  border-radius: 6px;
+  background: #18161c;
+}
+
+.song-cue-actions {
+  display: grid;
+  grid-template-columns: 32px 32px minmax(70px, 1fr) minmax(62px, 1fr);
+  align-items: center;
+  gap: 5px;
+}
+
+.song-cue-actions button {
+  min-height: 30px;
+  padding: 5px 8px;
+  color: #bbb5c2;
+  font-size: 0.64rem;
+  border: 1px solid #403a46;
+  border-radius: 7px;
+  background: #201d24;
+  cursor: pointer;
+}
+
+.song-cue-actions button:hover:not(:disabled) {
+  color: #f7f5fa;
+  border-color: #625a6b;
+  background: #28242d;
+}
+
+.song-cue-actions button:disabled {
+  color: #77707f;
+  cursor: not-allowed;
+  opacity: 0.42;
+  background: #1a181e;
+}
+
+.song-cue-actions .song-cue-move-button {
+  padding: 0;
+  font-size: 0.8rem;
+}
+
+.song-cue-actions .song-cue-delete-button {
+  color: #ff9ac5;
+  border-color: rgba(255, 43, 154, 0.3);
+}
+
+@media (max-width: 1050px) {
+  .song-cue-header {
+    flex-wrap: wrap;
+  }
+
+  .song-cue-card {
+    grid-template-columns: 36px minmax(140px, 1fr) minmax(170px, 1fr);
+  }
+
+  .song-cue-advance {
+    grid-column: 2;
+  }
+
+  .song-loop-count {
+    grid-column: 3;
+  }
+
+  .song-cue-actions {
+    grid-column: 2 / -1;
+    justify-self: end;
+    width: 230px;
+  }
+}
+
 .scene-timeline {
   width: 100%;
   min-width: 0;

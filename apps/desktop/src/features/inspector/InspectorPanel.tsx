@@ -18,6 +18,7 @@ import type {
   ProjectGroup,
   Scene,
   SceneLayer,
+  Song,
 } from '@led-studio/project-format';
 import { GroupInspector } from './GroupInspector';
 import { LayerInspector } from './LayerInspector';
@@ -26,6 +27,7 @@ import { LedSelectionInspector } from './LedSelectionInspector';
 import { MultiKeyframeInspector } from './MultiKeyframeInspector';
 import { PaletteInspector } from './PaletteInspector';
 import { SceneInspector } from './SceneInspector';
+import { SongInspector } from './SongInspector';
 import type { InspectorTarget } from './inspectorTarget';
 
 interface InspectorPanelProps {
@@ -47,6 +49,7 @@ interface InspectorPanelProps {
   selectedKeyframeTrack: KeyframeTrackKind | null;
   canDuplicateKeyframe: boolean;
   selectedScene: Scene | null;
+  selectedSong: Song | null;
   selectedToken: PaletteToken | null;
   tokenUsageCount: number;
   groupUsageCount: number;
@@ -55,12 +58,14 @@ interface InspectorPanelProps {
     options?: ExecuteEditorCommandOptions,
   ) => void;
   onDeleteScene: () => void;
+  onDeleteSong: () => void;
   onDeleteToken: () => void;
   onDeleteGroup: () => void;
   onDeleteLayer: () => void;
   onDeleteKeyframe: () => void;
   onDeleteKeyframes: () => void;
   onDuplicateScene: () => void;
+  onDuplicateSong: () => void;
   onDuplicateToken: () => void;
   onDuplicateGroup: () => void;
   onDuplicateLayer: () => void;
@@ -68,6 +73,7 @@ interface InspectorPanelProps {
   onDuplicateKeyframes: () => void;
   onCopyKeyframes: () => void;
   onMoveLayer: (toIndex: number) => void;
+  onMoveSong: (toIndex: number) => void;
   onPaint: (paletteTokenId: string) => void;
   onToggle: () => void;
   onTurnOff: () => void;
@@ -93,6 +99,9 @@ interface InspectorPanelProps {
   onUpdateScene: (
     changes: Partial<Pick<Scene, 'loopLengthBeats' | 'name'>>,
   ) => void;
+  onUpdateSong: (
+    changes: Partial<Pick<Song, 'launchQuantization' | 'name' | 'timing'>>,
+  ) => void;
   onUpdateToken: (
     changes: Partial<Pick<PaletteToken, 'name' | 'value'>>,
     options?: ExecuteEditorCommandOptions,
@@ -108,24 +117,28 @@ export function InspectorPanel({
   inspectorTarget,
   onBrightnessChange,
   onDeleteScene,
+  onDeleteSong,
   onDeleteGroup,
   onDeleteLayer,
   onDeleteKeyframe,
   onDeleteKeyframes,
   onDeleteToken,
   onDuplicateScene,
+  onDuplicateSong,
   onDuplicateGroup,
   onDuplicateLayer,
   onDuplicateKeyframe,
   onDuplicateKeyframes,
   onCopyKeyframes,
   onMoveLayer,
+  onMoveSong,
   onDuplicateToken,
   onPaint,
   onSelectionChange,
   onToggle,
   onTurnOff,
   onUpdateScene,
+  onUpdateSong,
   onUpdateGroup,
   onUpdateLayer,
   onUpdateKeyframe,
@@ -145,6 +158,7 @@ export function InspectorPanel({
   selectedKeyframeReferences,
   selectedKeyframeTrack,
   selectedScene,
+  selectedSong,
   selectedToken,
   tokenUsageCount,
 }: InspectorPanelProps) {
@@ -247,6 +261,15 @@ export function InspectorPanel({
               onDuplicate={onDuplicateLayer}
               onMove={onMoveLayer}
               onUpdate={onUpdateLayer}
+            />
+          ) : selectedSong ? (
+            <SongInspector
+              song={selectedSong}
+              songs={project.songs}
+              onDelete={onDeleteSong}
+              onDuplicate={onDuplicateSong}
+              onMove={onMoveSong}
+              onUpdate={onUpdateSong}
             />
           ) : selectedScene ? (
             <SceneInspector

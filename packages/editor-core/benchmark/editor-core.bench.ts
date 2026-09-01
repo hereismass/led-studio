@@ -50,7 +50,7 @@ const project: Project = {
     },
   ],
   schemaVersion: 2,
-  sequence: [],
+  songs: [],
   timing: {
     previewBpm: 120,
     timeSignature: { denominator: 4, numerator: 4 },
