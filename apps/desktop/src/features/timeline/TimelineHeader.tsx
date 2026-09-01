@@ -1,3 +1,7 @@
+import {
+  EFFECT_LAYER_PRESETS,
+  type SceneLayerTemplateId,
+} from '@led-studio/editor-core';
 import type { ProjectTiming } from '@led-studio/project-format';
 import type { PreviewPlaybackController } from '@/features/playback/previewPlayback';
 import { ChoiceMenu } from '@/shared/ui/ChoiceMenu';
@@ -14,7 +18,7 @@ interface TimelineHeaderProps {
   snap: TimelineSnap;
   timing: ProjectTiming;
   zoomMode: TimelineZoomMode;
-  onAddLayer: (type: 'pulse' | 'chase' | 'keyframe') => void;
+  onAddLayer: (type: SceneLayerTemplateId) => void;
   onFitScene: () => void;
   onSnapChange: (value: TimelineSnap) => void;
   onZoom: (multiplier: number) => void;
@@ -49,15 +53,42 @@ export function TimelineHeader({
         className="add-effect-control"
         ariaLabel="Add layer"
         options={[
-          { disabled: !canAddEffect, label: 'Pulse', value: 'pulse' },
-          { disabled: !canAddEffect, label: 'Chase', value: 'chase' },
-          { label: 'Keyframes', value: 'keyframe' },
+          {
+            disabled: !canAddEffect,
+            group: 'Layers',
+            label: 'Pulse',
+            value: 'pulse',
+          },
+          {
+            disabled: !canAddEffect,
+            group: 'Layers',
+            label: 'Chase',
+            value: 'chase',
+          },
+          {
+            disabled: !canAddEffect,
+            group: 'Layers',
+            label: 'Wave',
+            value: 'wave',
+          },
+          {
+            disabled: !canAddEffect,
+            group: 'Layers',
+            label: 'Sparkle',
+            value: 'sparkle',
+          },
+          { group: 'Layers', label: 'Keyframes', value: 'keyframe' },
+          ...EFFECT_LAYER_PRESETS.map(({ id, label }) => ({
+            disabled: !canAddEffect,
+            group: 'Quick starts',
+            label,
+            value: id,
+          })),
         ]}
         placeholder="＋ Add layer…"
         value={null}
         onChange={(type) => {
-          if (type === 'pulse' || type === 'chase' || type === 'keyframe')
-            onAddLayer(type);
+          onAddLayer(type as SceneLayerTemplateId);
         }}
       />
       <div className="timeline-authoring-controls">

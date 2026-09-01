@@ -8,6 +8,7 @@ import {
   projectGroupUsageCount,
   type EditorCommand,
   type ExecuteEditorCommandOptions,
+  type SceneLayerTemplateId,
 } from '@led-studio/editor-core';
 import { getHardwareProfile } from '@led-studio/hardware-profiles';
 import type {
@@ -271,7 +272,7 @@ export function ProjectWorkspace({
     return target;
   }
 
-  function addLayer(layerType: 'pulse' | 'chase' | 'keyframe') {
+  function addLayer(layerType: SceneLayerTemplateId) {
     if (!activeScene || (layerType !== 'keyframe' && colours.length === 0))
       return;
     const command = createSceneLayerAddedCommand(

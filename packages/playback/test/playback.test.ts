@@ -10,6 +10,7 @@ import {
   evaluateSceneFrame,
   keyframesInActiveWindow,
   normalizeLoopPosition,
+  sparkleHash32,
 } from '../src/index.js';
 
 const WHITE_ID = '8b2c3d4e-5f60-4a71-8b92-c3d4e5f60718';
@@ -245,6 +246,193 @@ describe('scene evaluation', () => {
       brightnessPercent: 90,
       colour: '#45FF72',
     });
+  });
+
+  it('evaluates Wave in physical address order with direction and phase', () => {
+    const waveScene: Scene = {
+      ...scene,
+      layers: [
+        {
+          effect: {
+            cycleLengthBeats: 1,
+            direction: 'forward',
+            maxBrightnessPercent: 100,
+            minBrightnessPercent: 0,
+            paletteTokenId: PINK_ID,
+            phaseOffsetBeats: 0,
+            type: 'wave',
+            waveform: 'sine',
+            wavelengthLeds: 4,
+          },
+          enabled: true,
+          endBeat: 4,
+          id: '5d4b6d3e-1f25-48c1-8c74-7cb8449ed41e',
+          kind: 'effect',
+          locked: false,
+          name: 'Wave',
+          startBeat: 0,
+          target: {
+            kind: 'leds',
+            ledIds: [
+              'fret-15-g-side',
+              'fret-21-g-side',
+              'fret-17-g-side',
+              'fret-19-g-side',
+            ],
+          },
+        },
+      ],
+    };
+    const atStart = evaluateSceneFrame(
+      waveScene,
+      palette,
+      kmsFourString10LedProfile,
+      0,
+    );
+    atStart
+      .slice(0, 4)
+      .map(({ brightnessPercent }) => brightnessPercent)
+      .forEach((brightness, index) =>
+        expect(brightness).toBeCloseTo([0, 50, 100, 50][index]),
+      );
+    const forward = evaluateSceneFrame(
+      waveScene,
+      palette,
+      kmsFourString10LedProfile,
+      0.25,
+    );
+    expect(forward[3].brightnessPercent).toBe(100);
+
+    const waveLayer = waveScene.layers[0];
+    if (waveLayer.kind !== 'effect' || waveLayer.effect.type !== 'wave')
+      throw new Error('Expected Wave');
+    const reverse = evaluateSceneFrame(
+      {
+        ...waveScene,
+        layers: [
+          {
+            ...waveLayer,
+            effect: { ...waveLayer.effect, direction: 'reverse' },
+          },
+        ],
+      },
+      palette,
+      kmsFourString10LedProfile,
+      0.25,
+    );
+    expect(reverse[1].brightnessPercent).toBe(100);
+  });
+
+  it('evaluates deterministic Sparkle steps, pass-through, and fade decay', () => {
+    expect([
+      sparkleHash32(42, 0, 0),
+      sparkleHash32(42, 0, 1),
+      sparkleHash32(42, 1, 0),
+      sparkleHash32(43, 0, 0),
+    ]).toEqual([2939521297, 3729765615, 2585184744, 2228993446]);
+
+    const sparkleScene: Scene = {
+      ...scene,
+      layers: [
+        {
+          effect: {
+            brightnessPercent: 80,
+            decay: 'hold',
+            densityPercent: 100,
+            paletteTokenId: PINK_ID,
+            seed: 42,
+            stepLengthBeats: 0.25,
+            type: 'sparkle',
+          },
+          enabled: true,
+          endBeat: 2,
+          id: '6e5c7e4f-2a36-49d2-9d85-8dc955afe52f',
+          kind: 'effect',
+          locked: false,
+          name: 'Sparkle',
+          startBeat: 0,
+          target: {
+            kind: 'leds',
+            ledIds: ['fret-21-g-side', 'fret-19-g-side'],
+          },
+        },
+      ],
+    };
+    const holdEvaluator = compileSceneEvaluator(
+      sparkleScene,
+      palette,
+      kmsFourString10LedProfile,
+    );
+    expect(holdEvaluator.getFrame(0.01)).toBe(holdEvaluator.getFrame(0.24));
+    expect(holdEvaluator.getFrame(0)[0]).toMatchObject({
+      brightnessPercent: 80,
+      colour: '#FF2B9A',
+    });
+
+    const sparkleLayer = sparkleScene.layers[0];
+    if (
+      sparkleLayer.kind !== 'effect' ||
+      sparkleLayer.effect.type !== 'sparkle'
+    )
+      throw new Error('Expected Sparkle');
+    const fadeEvaluator = compileSceneEvaluator(
+      {
+        ...sparkleScene,
+        layers: [
+          {
+            ...sparkleLayer,
+            effect: { ...sparkleLayer.effect, decay: 'fade' },
+          },
+        ],
+      },
+      palette,
+      kmsFourString10LedProfile,
+    );
+    expect(fadeEvaluator.getFrame(0.125)[0].brightnessPercent).toBe(40);
+
+    const passThrough = evaluateSceneFrame(
+      {
+        ...sparkleScene,
+        layers: [
+          {
+            ...sparkleLayer,
+            effect: { ...sparkleLayer.effect, densityPercent: 0 },
+          },
+        ],
+      },
+      palette,
+      kmsFourString10LedProfile,
+      0,
+    );
+    expect(passThrough[0]).toMatchObject({
+      brightnessPercent: 40,
+      colour: '#FFFFFF',
+    });
+    expect(passThrough[1]).toMatchObject({
+      brightnessPercent: 0,
+      colour: null,
+    });
+  });
+
+  it('decorrelates Sparkle density across adjacent physical addresses', () => {
+    const activeCounts = Array.from(
+      { length: 4096 },
+      (_, stepIndex) =>
+        Array.from({ length: 10 }, (_, ledAddress) =>
+          sparkleHash32(20260901, stepIndex, ledAddress),
+        ).filter((sample) => sample / 0x1_0000_0000 < 0.2).length,
+    );
+    const meanActiveCount =
+      activeCounts.reduce((total, count) => total + count, 0) /
+      activeCounts.length;
+
+    expect(meanActiveCount).toBeGreaterThan(1.8);
+    expect(meanActiveCount).toBeLessThan(2.2);
+    expect(activeCounts.filter((count) => count === 0).length).toBeLessThan(
+      700,
+    );
+    expect(activeCounts.filter((count) => count === 10)).toHaveLength(0);
+    expect(new Set(activeCounts).size).toBeGreaterThan(4);
   });
 
   it('resolves linked groups and gives the topmost enabled layer precedence', () => {

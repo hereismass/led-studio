@@ -420,6 +420,27 @@
   );
 }
 
+.effect-layer-wave {
+  border-color: rgba(94, 205, 255, 0.58);
+  background: linear-gradient(
+    90deg,
+    rgba(94, 205, 255, 0.12),
+    rgba(128, 113, 255, 0.34),
+    rgba(94, 205, 255, 0.12)
+  );
+}
+
+.effect-layer-sparkle {
+  border-color: rgba(255, 226, 107, 0.55);
+  background-color: rgba(255, 226, 107, 0.1);
+  background-image: radial-gradient(
+    circle,
+    rgba(255, 245, 193, 0.72) 0 1px,
+    transparent 1.5px
+  );
+  background-size: 10px 10px;
+}
+
 .effect-layer-keyframe {
   border-color: rgba(128, 113, 255, 0.64);
   background: linear-gradient(

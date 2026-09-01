@@ -82,6 +82,68 @@
         "fret-05-e-side": { "paletteTokenId": "8b2c3d4e-5f60-4a71-8b92-c3d4e5f60718", "brightnessPercent": 100 },
         "fret-03-e-side": { "paletteTokenId": "8b2c3d4e-5f60-4a71-8b92-c3d4e5f60718", "brightnessPercent": 100 }
       }
+    },
+    {
+      "id": "7f6d8f50-3b47-4ae3-ae96-9ed066b0f630",
+      "name": "Rolling Wave",
+      "loopLengthBeats": 4,
+      "layers": [
+        {
+          "id": "805e9061-4c58-4bf4-bfa7-a0e177c10741",
+          "kind": "effect",
+          "name": "Rolling Wave",
+          "enabled": true,
+          "locked": false,
+          "startBeat": 0,
+          "endBeat": 4,
+          "target": {
+            "kind": "profile-group",
+            "groupId": "all-leds"
+          },
+          "effect": {
+            "type": "wave",
+            "paletteTokenId": "8b2c3d4e-5f60-4a71-8b92-c3d4e5f60718",
+            "minBrightnessPercent": 10,
+            "maxBrightnessPercent": 100,
+            "cycleLengthBeats": 2,
+            "phaseOffsetBeats": 0,
+            "wavelengthLeds": 4,
+            "waveform": "sine",
+            "direction": "forward"
+          }
+        }
+      ],
+      "ledStates": {}
+    },
+    {
+      "id": "916fa172-5d69-4c05-80b8-b1f288d21852",
+      "name": "Soft Sparkle",
+      "loopLengthBeats": 4,
+      "layers": [
+        {
+          "id": "a270b283-6e7a-4d16-91c9-c20399e32963",
+          "kind": "effect",
+          "name": "Soft Twinkle",
+          "enabled": true,
+          "locked": false,
+          "startBeat": 0,
+          "endBeat": 4,
+          "target": {
+            "kind": "profile-group",
+            "groupId": "all-leds"
+          },
+          "effect": {
+            "type": "sparkle",
+            "paletteTokenId": "1a2b3c4d-5e6f-4789-8abc-def012345678",
+            "brightnessPercent": 65,
+            "densityPercent": 20,
+            "stepLengthBeats": 0.5,
+            "decay": "fade",
+            "seed": 20260901
+          }
+        }
+      ],
+      "ledStates": {}
     }
   ],
   "sequence": [],

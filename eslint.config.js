@@ -49,10 +49,10 @@ export default tseslint.config(
           patterns: [
             {
               group: [
-                '@/app/**',
-                '@/features/**',
-                '@/platform/**',
-                '@/workspace/**',
+                '**/app/**',
+                '**/features/**',
+                '**/platform/**',
+                '**/workspace/**',
               ],
               message:
                 'Shared desktop code cannot depend on higher-level modules.',
@@ -70,7 +70,7 @@ export default tseslint.config(
         {
           patterns: [
             {
-              group: ['@/app/**', '@/platform/tauri/**', '@/workspace/**'],
+              group: ['**/app/**', '**/platform/tauri/**', '**/workspace/**'],
               message:
                 'Features may use shared code and platform-neutral packages, not app, workspace, or Tauri implementations.',
             },
@@ -90,7 +90,7 @@ export default tseslint.config(
         {
           patterns: [
             {
-              group: ['@/platform/tauri/**'],
+              group: ['**/platform/tauri/**'],
               message:
                 'Session and workspace code must depend on platform ports, not concrete Tauri adapters.',
             },

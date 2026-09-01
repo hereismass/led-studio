@@ -375,7 +375,9 @@ describe('App project launcher and lifecycle', () => {
       '--bottom-panel-height': '227px',
     });
     expect(
-      screen.getByRole('button', { name: 'Pulse, 0 to 4 beats' }),
+      screen.getByRole('button', {
+        name: 'Pulse, pulse effect, 0 to 4 beats',
+      }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole('button', { name: 'Layer target' }),
@@ -414,6 +416,68 @@ describe('App project launcher and lifecycle', () => {
     expect(
       screen.getByText(/Protects this layer from parameter/),
     ).toBeVisible();
+  });
+
+  it('creates and edits spatial effects and quick-start presets', async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await user.click(screen.getByRole('button', { name: /new project/i }));
+
+    await user.click(screen.getByRole('button', { name: 'Add layer' }));
+    expect(screen.getByText('Layers')).toBeInTheDocument();
+    expect(screen.getByText('Quick starts')).toBeInTheDocument();
+    await user.click(screen.getByRole('option', { name: 'Wave' }));
+    expect(
+      screen.getByRole('button', {
+        name: 'Wave, wave effect, 0 to 4 beats',
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('spinbutton', { name: 'Wavelength (LEDs)' }),
+    ).toHaveValue(4);
+    await user.click(screen.getByRole('radio', { name: 'Reverse' }));
+    expect(screen.getByRole('radio', { name: 'Reverse' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Add layer' }));
+    await user.click(screen.getByRole('option', { name: 'Sparkle' }));
+    expect(
+      screen.getByRole('button', {
+        name: 'Sparkle, sparkle effect, 0 to 4 beats',
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('spinbutton', { name: 'Density (%)' })).toHaveValue(
+      30,
+    );
+    expect(screen.getByRole('radio', { name: 'Fade' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
+    await user.click(screen.getByRole('button', { name: 'Reseed pattern' }));
+    expect(
+      screen.getByText(/hidden seed keeps playback repeatable/i),
+    ).toBeVisible();
+    await user.click(screen.getByRole('checkbox', { name: 'Lock editing' }));
+    expect(
+      screen.getByRole('button', { name: 'Reseed pattern' }),
+    ).toBeDisabled();
+    await user.click(screen.getByRole('checkbox', { name: 'Lock editing' }));
+
+    await user.click(screen.getByRole('button', { name: 'Add layer' }));
+    await user.click(screen.getByRole('option', { name: 'Rolling Wave' }));
+    expect(
+      screen.getByRole('button', {
+        name: 'Rolling Wave, wave effect, 0 to 4 beats',
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('spinbutton', { name: 'Cycle length (beats)' }),
+    ).toHaveValue(2);
+    expect(
+      screen.getByRole('spinbutton', { name: 'Minimum brightness' }),
+    ).toHaveValue(10);
   });
 
   it('authors and inspects independent keyframe tracks at the playhead', async () => {

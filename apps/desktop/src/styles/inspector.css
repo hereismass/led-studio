@@ -324,6 +324,10 @@
   margin-top: 4px;
 }
 
+.sparkle-actions {
+  grid-template-columns: 1fr;
+}
+
 .layer-lock-control {
   display: grid;
   gap: 6px;

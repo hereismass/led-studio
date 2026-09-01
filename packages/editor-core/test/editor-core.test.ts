@@ -9,6 +9,7 @@ import {
 } from '@led-studio/project-format';
 import { describe, expect, it } from 'vitest';
 import {
+  EFFECT_LAYER_PRESETS,
   MAX_EDITOR_HISTORY_REVISIONS,
   applyEditorCommand,
   createDefaultProject,
@@ -31,6 +32,7 @@ import {
   redoEditorHistory,
   undoEditorHistory,
   type ProjectEntityIdFactory,
+  type SceneLayerTemplateId,
 } from '../src/index.js';
 
 const HOT_PINK_ID = '8b2c3d4e-5f60-4a71-8b92-c3d4e5f60718';
@@ -306,6 +308,87 @@ describe('editor commands', () => {
       groupId: GROUP_ID,
       kind: 'project-group',
     });
+    expectValid(project);
+  });
+
+  it('creates Wave, Sparkle, and curated preset layers with editable values', () => {
+    let project = applyEditorCommand(projectWithPalette(), {
+      id: SCENE_ID,
+      type: 'scene-added',
+    });
+    const templates: SceneLayerTemplateId[] = [
+      'wave',
+      'sparkle',
+      ...EFFECT_LAYER_PRESETS.map(({ id }) => id),
+    ];
+
+    templates.forEach((template, index) => {
+      project = applyEditorCommand(
+        project,
+        createSceneLayerAddedCommand(
+          project,
+          SCENE_ID,
+          template,
+          { groupId: 'all-leds', kind: 'profile-group' },
+          ids(generatedId(1_000 + index)),
+        ),
+      );
+    });
+
+    expect(
+      project.scenes[0].layers.map((layer) => ({
+        name: layer.name,
+        type: layer.kind === 'effect' ? layer.effect.type : layer.kind,
+      })),
+    ).toEqual([
+      { name: 'Wave', type: 'wave' },
+      { name: 'Sparkle', type: 'sparkle' },
+      { name: 'Slow Breath', type: 'pulse' },
+      { name: 'Comet', type: 'chase' },
+      { name: 'Rolling Wave', type: 'wave' },
+      { name: 'Soft Twinkle', type: 'sparkle' },
+    ]);
+
+    const sparkle = project.scenes[0].layers[1];
+    if (sparkle.kind !== 'effect' || sparkle.effect.type !== 'sparkle')
+      throw new Error('Expected Sparkle');
+    expect(sparkle.effect).toMatchObject({
+      brightnessPercent: 100,
+      decay: 'fade',
+      densityPercent: 30,
+      seed: 1_001,
+      stepLengthBeats: 0.25,
+    });
+    const twinkle = project.scenes[0].layers[5];
+    if (twinkle.kind !== 'effect' || twinkle.effect.type !== 'sparkle')
+      throw new Error('Expected Soft Twinkle');
+    expect(twinkle.effect).toMatchObject({
+      brightnessPercent: 65,
+      densityPercent: 20,
+      stepLengthBeats: 0.5,
+    });
+
+    const unchanged = applyEditorCommand(project, {
+      changes: { effect: twinkle.effect },
+      id: twinkle.id,
+      sceneId: SCENE_ID,
+      type: 'scene-layer-updated',
+    });
+    expect(unchanged).toBe(project);
+
+    project = applyEditorCommand(
+      project,
+      createSceneLayerDuplicatedCommand(
+        project,
+        SCENE_ID,
+        sparkle.id,
+        ids(generatedId(2_000)),
+      ),
+    );
+    const sparkleCopy = project.scenes[0].layers[2];
+    if (sparkleCopy.kind !== 'effect' || sparkleCopy.effect.type !== 'sparkle')
+      throw new Error('Expected duplicated Sparkle');
+    expect(sparkleCopy.effect.seed).toBe(sparkle.effect.seed);
     expectValid(project);
   });
 

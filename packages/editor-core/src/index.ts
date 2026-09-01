@@ -48,6 +48,10 @@ import {
   projectGroupUsageCount,
 } from './projectQueries.js';
 import { commitEditorProject } from './history.js';
+import {
+  effectLayerTemplate,
+  type SceneLayerTemplateId,
+} from './sceneLayerTemplates.js';
 
 export {
   paletteTokenUsageCount,
@@ -62,6 +66,11 @@ export {
   type EditorHistoryTransition,
   type EditorRevision,
 } from './history.js';
+export {
+  EFFECT_LAYER_PRESETS,
+  type EffectLayerPresetId,
+  type SceneLayerTemplateId,
+} from './sceneLayerTemplates.js';
 import type { EditorHistory, EditorHistoryTransition } from './history.js';
 
 export type KeyframeTrackKind = 'brightness' | 'colour';
@@ -161,7 +170,7 @@ export type EditorCommand =
   | { id: string; sourceId: string; type: 'group-duplicated' }
   | { id: string; type: 'group-deleted' }
   | {
-      layerType: Effect['type'] | 'keyframe';
+      layerType: SceneLayerTemplateId;
       id: string;
       sceneId: string;
       target: LayerTarget;
@@ -589,6 +598,26 @@ function effectsEqual(left: Effect, right: Effect): boolean {
       left.trailLength === right.trailLength &&
       left.width === right.width
     );
+  if (left.type === 'wave' && right.type === 'wave')
+    return (
+      left.cycleLengthBeats === right.cycleLengthBeats &&
+      left.direction === right.direction &&
+      left.maxBrightnessPercent === right.maxBrightnessPercent &&
+      left.minBrightnessPercent === right.minBrightnessPercent &&
+      left.paletteTokenId === right.paletteTokenId &&
+      left.phaseOffsetBeats === right.phaseOffsetBeats &&
+      left.waveform === right.waveform &&
+      left.wavelengthLeds === right.wavelengthLeds
+    );
+  if (left.type === 'sparkle' && right.type === 'sparkle')
+    return (
+      left.brightnessPercent === right.brightnessPercent &&
+      left.decay === right.decay &&
+      left.densityPercent === right.densityPercent &&
+      left.paletteTokenId === right.paletteTokenId &&
+      left.seed === right.seed &&
+      left.stepLengthBeats === right.stepLengthBeats
+    );
   return false;
 }
 
@@ -759,7 +788,7 @@ export function createGroupDuplicatedCommand(
 export function createSceneLayerAddedCommand(
   project: Project,
   sceneId: string,
-  layerType: Effect['type'] | 'keyframe',
+  layerType: SceneLayerTemplateId,
   target: LayerTarget,
   idFactory: ProjectEntityIdFactory = generateProjectEntityId,
 ): Extract<EditorCommand, { type: 'scene-layer-added' }> {
@@ -1300,6 +1329,14 @@ export function applyEditorCommand(
         startBeat: 0,
         target: assertTarget(project, command.target),
       };
+      const effectTemplate =
+        command.layerType === 'keyframe'
+          ? null
+          : effectLayerTemplate(
+              command.layerType,
+              project.palette[0].id,
+              common.id,
+            );
       const layer: SceneLayer =
         command.layerType === 'keyframe'
           ? parseCommandValue(KeyframeLayerSchema, {
@@ -1316,30 +1353,11 @@ export function applyEditorCommand(
             })
           : parseCommandValue(EffectLayerSchema, {
               ...common,
-              effect:
-                command.layerType === 'pulse'
-                  ? {
-                      cycleLengthBeats: 1,
-                      maxBrightnessPercent: 100,
-                      minBrightnessPercent: 0,
-                      paletteTokenId: project.palette[0].id,
-                      phaseOffsetBeats: 0,
-                      type: 'pulse',
-                      waveform: 'sine',
-                    }
-                  : {
-                      brightnessPercent: 100,
-                      direction: 'forward',
-                      paletteTokenId: project.palette[0].id,
-                      stepLengthBeats: 0.25,
-                      trailLength: 0,
-                      type: 'chase',
-                      width: 1,
-                    },
+              effect: effectTemplate!.effect,
               kind: 'effect',
               name: uniqueName(
                 scene.layers.map(({ name }) => name),
-                command.layerType === 'pulse' ? 'Pulse' : 'Chase',
+                effectTemplate!.name,
               ),
             });
       return updateScene(project, scene.id, (current) => ({

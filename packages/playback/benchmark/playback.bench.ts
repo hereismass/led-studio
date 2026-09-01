@@ -1,5 +1,9 @@
 import { kmsFourString10LedProfile } from '@led-studio/hardware-profiles';
-import type { PaletteToken, Scene } from '@led-studio/project-format';
+import type {
+  PaletteToken,
+  Scene,
+  SceneLayer,
+} from '@led-studio/project-format';
 import { bench, describe } from 'vitest';
 import { compileSceneEvaluator } from '../src/index.js';
 
@@ -66,6 +70,54 @@ const keyframeScene: Scene = {
   loopLengthBeats: 4096,
   name: 'Keyframe benchmark scene',
 };
+const spatialScene: Scene = {
+  ...scene,
+  id: uuid(20_000),
+  layers: Array.from({ length: 512 }, (_, index): SceneLayer =>
+    index % 2 === 0
+      ? {
+          effect: {
+            cycleLengthBeats: 2,
+            direction: index % 4 === 0 ? 'forward' : 'reverse',
+            maxBrightnessPercent: 100,
+            minBrightnessPercent: 10,
+            paletteTokenId: token.id,
+            phaseOffsetBeats: index % 4,
+            type: 'wave',
+            waveform: 'sine',
+            wavelengthLeds: 4,
+          },
+          enabled: true,
+          endBeat: 4,
+          id: uuid(index + 21_000),
+          kind: 'effect',
+          locked: false,
+          name: `Wave ${index + 1}`,
+          startBeat: 0,
+          target: { groupId: 'all-leds', kind: 'profile-group' },
+        }
+      : {
+          effect: {
+            brightnessPercent: 80,
+            decay: 'fade',
+            densityPercent: 25,
+            paletteTokenId: token.id,
+            seed: index,
+            stepLengthBeats: 0.25,
+            type: 'sparkle',
+          },
+          enabled: true,
+          endBeat: 4,
+          id: uuid(index + 21_000),
+          kind: 'effect',
+          locked: false,
+          name: `Sparkle ${index + 1}`,
+          startBeat: 0,
+          target: { groupId: 'all-leds', kind: 'profile-group' },
+        },
+  ),
+  name: 'Spatial effects benchmark scene',
+};
 
 describe('large scene playback', () => {
   bench('compile 512 animated layers', () => {
@@ -81,6 +133,17 @@ describe('large scene playback', () => {
   bench('evaluate the next frame across 512 layers', () => {
     position += 1 / 240;
     evaluator.getFrame(position);
+  });
+
+  const spatialEvaluator = compileSceneEvaluator(
+    spatialScene,
+    [token],
+    kmsFourString10LedProfile,
+  );
+  let spatialPosition = 0;
+  bench('evaluate 512 mixed Wave and Sparkle layers', () => {
+    spatialPosition += 1 / 240;
+    spatialEvaluator.getFrame(spatialPosition);
   });
 
   const keyframeEvaluator = compileSceneEvaluator(

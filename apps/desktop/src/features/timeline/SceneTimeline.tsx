@@ -3,6 +3,7 @@ import type {
   KeyframeMove,
   KeyframeReference,
   KeyframeValue,
+  SceneLayerTemplateId,
 } from '@led-studio/editor-core';
 import type {
   PaletteToken,
@@ -52,7 +53,7 @@ interface SceneTimelineProps {
   timelinePixelsPerBeat: number;
   timelineZoomMode: TimelineZoomMode;
   onAddKeyframe: (layerId: string, beat: number, value: KeyframeValue) => void;
-  onAddLayer: (type: 'pulse' | 'chase' | 'keyframe') => void;
+  onAddLayer: (type: SceneLayerTemplateId) => void;
   onMoveLayer: (id: string, toIndex: number) => void;
   onKeyframeAction: (
     action: 'copy' | 'cut' | 'delete' | 'duplicate' | 'paste',

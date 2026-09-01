@@ -174,6 +174,9 @@ export const LayerTargetSchema = z.discriminatedUnion('kind', [
 
 export const EffectTargetSchema = LayerTargetSchema;
 
+export const EffectWaveformSchema = z.enum(['sine', 'triangle', 'square']);
+export const EffectDirectionSchema = z.enum(['forward', 'reverse']);
+
 export const PulseEffectSchema = z
   .object({
     cycleLengthBeats: PositiveQuarterBeatSchema,
@@ -182,7 +185,7 @@ export const PulseEffectSchema = z
     paletteTokenId: PaletteTokenIdSchema,
     phaseOffsetBeats: QuarterBeatSchema,
     type: z.literal('pulse'),
-    waveform: z.enum(['sine', 'triangle', 'square']),
+    waveform: EffectWaveformSchema,
   })
   .strict()
   .refine(
@@ -196,7 +199,7 @@ export const PulseEffectSchema = z
 export const ChaseEffectSchema = z
   .object({
     brightnessPercent: z.number().int().min(0).max(100),
-    direction: z.enum(['forward', 'reverse']),
+    direction: EffectDirectionSchema,
     paletteTokenId: PaletteTokenIdSchema,
     stepLengthBeats: PositiveQuarterBeatSchema,
     trailLength: z.number().int().min(0),
@@ -205,9 +208,44 @@ export const ChaseEffectSchema = z
   })
   .strict();
 
+export const WaveEffectSchema = z
+  .object({
+    cycleLengthBeats: PositiveQuarterBeatSchema,
+    direction: EffectDirectionSchema,
+    maxBrightnessPercent: SceneBrightnessPercentSchema,
+    minBrightnessPercent: SceneBrightnessPercentSchema,
+    paletteTokenId: PaletteTokenIdSchema,
+    phaseOffsetBeats: QuarterBeatSchema,
+    type: z.literal('wave'),
+    waveform: EffectWaveformSchema,
+    wavelengthLeds: z.number().int().min(1),
+  })
+  .strict()
+  .refine(
+    (effect) => effect.minBrightnessPercent <= effect.maxBrightnessPercent,
+    {
+      message: 'Wave minimum brightness cannot exceed maximum brightness',
+      path: ['minBrightnessPercent'],
+    },
+  );
+
+export const SparkleEffectSchema = z
+  .object({
+    brightnessPercent: SceneBrightnessPercentSchema,
+    decay: z.enum(['hold', 'fade']),
+    densityPercent: z.number().int().min(0).max(100),
+    paletteTokenId: PaletteTokenIdSchema,
+    seed: z.number().int().min(0).max(0xffff_ffff),
+    stepLengthBeats: PositiveQuarterBeatSchema,
+    type: z.literal('sparkle'),
+  })
+  .strict();
+
 export const EffectSchema = z.discriminatedUnion('type', [
   PulseEffectSchema,
   ChaseEffectSchema,
+  WaveEffectSchema,
+  SparkleEffectSchema,
 ]);
 
 export const SceneLayerNameSchema = z
@@ -629,6 +667,8 @@ export type PaletteToken = z.infer<typeof PaletteTokenSchema>;
 export type ProjectTiming = z.infer<typeof ProjectTimingSchema>;
 export type ProjectGroup = z.infer<typeof ProjectGroupSchema>;
 export type PulseEffect = z.infer<typeof PulseEffectSchema>;
+export type SparkleEffect = z.infer<typeof SparkleEffectSchema>;
+export type WaveEffect = z.infer<typeof WaveEffectSchema>;
 export type Scene = z.infer<typeof SceneSchema>;
 export type SceneLayer = z.infer<typeof SceneLayerSchema>;
 export type SceneLedState = z.infer<typeof SceneLedStateSchema>;

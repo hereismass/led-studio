@@ -158,6 +158,37 @@ describe('editor clipboard', () => {
     });
   });
 
+  it('preserves deterministic Sparkle settings when copying a layer', () => {
+    const ids = idFactory();
+    let project = createDefaultProject(
+      { name: 'Sparkle source', profile: kmsFourString10LedProfile },
+      ids,
+    );
+    const scene = project.scenes[0];
+    const command = createSceneLayerAddedCommand(
+      project,
+      scene.id,
+      'sparkle',
+      { groupId: 'all-leds', kind: 'profile-group' },
+      ids,
+    );
+    project = applyEditorCommand(project, command);
+    const source = project.scenes[0].layers[0];
+    if (source.kind !== 'effect' || source.effect.type !== 'sparkle')
+      throw new Error('Expected Sparkle');
+
+    const pasted = pastedLayer(
+      project,
+      kmsFourString10LedProfile,
+      project.scenes[0],
+      copyLayer(project, kmsFourString10LedProfile, source),
+      0,
+    );
+    if (pasted.kind !== 'effect' || pasted.effect.type !== 'sparkle')
+      throw new Error('Expected pasted Sparkle');
+    expect(pasted.effect).toEqual(source.effect);
+  });
+
   it('rejects missing palette colours, LEDs, and overflowing layers', () => {
     const { layer, project } = projectWithKeyframes();
     const keyframes = copyKeyframes(project, layer, [

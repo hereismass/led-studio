@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  EffectSchema,
   PROJECT_LIMITS,
   ProjectSchema,
   ProjectFormatError,
@@ -19,6 +20,8 @@ const BLACK_ID = 'f0e1d2c3-b4a5-4678-9abc-def012345678';
 const GROUP_ID = 'ad56c792-07e6-42d7-84fd-0b509289b4ab';
 const PULSE_ID = 'bb93ef72-0987-4b53-9924-9a720215ce8a';
 const CHASE_ID = '2ac65eaf-4c2c-482e-b525-1c6e941dd0c8';
+const WAVE_ID = '5d4b6d3e-1f25-48c1-8c74-7cb8449ed41e';
+const SPARKLE_ID = '6e5c7e4f-2a36-49d2-9d85-8dc955afe52f';
 const KEYFRAME_LAYER_ID = 'c4793529-a645-4c18-8a4d-5e4f148ee493';
 const BRIGHTNESS_KEY_1_ID = '11111111-1111-4111-8111-111111111111';
 const BRIGHTNESS_KEY_2_ID = '22222222-2222-4222-8222-222222222222';
@@ -195,7 +198,7 @@ describe('ProjectSchema', () => {
     ).toBe(false);
   });
 
-  it('accepts project groups and typed Pulse and Chase layers', () => {
+  it('accepts project groups and every typed effect layer', () => {
     const project = parseProject({
       ...validProject,
       groups: [
@@ -247,6 +250,46 @@ describe('ProjectSchema', () => {
               startBeat: 1,
               target: { groupId: 'all-leds', kind: 'profile-group' },
             },
+            {
+              effect: {
+                cycleLengthBeats: 2,
+                direction: 'forward',
+                maxBrightnessPercent: 100,
+                minBrightnessPercent: 10,
+                paletteTokenId: HOT_PINK_ID,
+                phaseOffsetBeats: 0,
+                type: 'wave',
+                waveform: 'triangle',
+                wavelengthLeds: 4,
+              },
+              enabled: true,
+              endBeat: 4,
+              id: WAVE_ID,
+              kind: 'effect',
+              locked: false,
+              name: 'Wave',
+              startBeat: 0,
+              target: { groupId: 'all-leds', kind: 'profile-group' },
+            },
+            {
+              effect: {
+                brightnessPercent: 65,
+                decay: 'fade',
+                densityPercent: 20,
+                paletteTokenId: ELECTRIC_GREEN_ID,
+                seed: 42,
+                stepLengthBeats: 0.5,
+                type: 'sparkle',
+              },
+              enabled: true,
+              endBeat: 4,
+              id: SPARKLE_ID,
+              kind: 'effect',
+              locked: false,
+              name: 'Sparkle',
+              startBeat: 0,
+              target: { groupId: 'all-leds', kind: 'profile-group' },
+            },
           ],
           ledStates: {},
           loopLengthBeats: 4,
@@ -259,7 +302,53 @@ describe('ProjectSchema', () => {
       project.scenes[0].layers.map((layer) =>
         layer.kind === 'effect' ? layer.effect.type : layer.kind,
       ),
-    ).toEqual(['pulse', 'chase']);
+    ).toEqual(['pulse', 'chase', 'wave', 'sparkle']);
+  });
+
+  it('rejects invalid Wave and Sparkle parameters', () => {
+    const wave = {
+      cycleLengthBeats: 2,
+      direction: 'forward',
+      maxBrightnessPercent: 80,
+      minBrightnessPercent: 10,
+      paletteTokenId: HOT_PINK_ID,
+      phaseOffsetBeats: 0,
+      type: 'wave',
+      waveform: 'sine',
+      wavelengthLeds: 4,
+    } as const;
+    const sparkle = {
+      brightnessPercent: 100,
+      decay: 'fade',
+      densityPercent: 25,
+      paletteTokenId: HOT_PINK_ID,
+      seed: 42,
+      stepLengthBeats: 0.25,
+      type: 'sparkle',
+    } as const;
+
+    expect(
+      EffectSchema.safeParse({
+        ...wave,
+        maxBrightnessPercent: 20,
+        minBrightnessPercent: 21,
+      }).success,
+    ).toBe(false);
+    expect(EffectSchema.safeParse({ ...wave, wavelengthLeds: 0 }).success).toBe(
+      false,
+    );
+    expect(
+      EffectSchema.safeParse({ ...wave, cycleLengthBeats: 0.3 }).success,
+    ).toBe(false);
+    expect(
+      EffectSchema.safeParse({ ...sparkle, densityPercent: 101 }).success,
+    ).toBe(false);
+    expect(
+      EffectSchema.safeParse({ ...sparkle, seed: 0x1_0000_0000 }).success,
+    ).toBe(false);
+    expect(EffectSchema.safeParse({ ...sparkle, decay: 'glow' }).success).toBe(
+      false,
+    );
   });
 
   it('accepts independently animated brightness and colour keyframe tracks', () => {

@@ -141,6 +141,18 @@ Implementation complete; the easing presets and timeline-curve review gate is op
 - Keep freeform curve handles, additional effects, blend modes, sequences, and external control deferred.
 - Review gate: preset usefulness, curve readability, bulk-edit behavior, and whether custom curves are ever justified.
 
+### 9. Spatial animation tools
+
+Implementation complete; the Wave, Sparkle, and quick-start preset review gate is open for feedback.
+
+- Add a Wave effect that offsets sine, triangle, or square brightness across targets in physical LED-address order.
+- Add deterministic Sparkle with configurable density, musical step length, hold/fade decay, and an explicitly reseedable hidden seed.
+- Keep inactive Sparkle LEDs transparent to lower layers while retaining the existing replacement compositing model.
+- Add Slow Breath, Comet, Rolling Wave, and Soft Twinkle quick starts that create ordinary editable layers without persisted preset references.
+- Preserve all effect parameters through project validation, undo/redo, duplication, clipboard operations, and save/load.
+- Cache stepped Sparkle frames while keeping Wave and fading Sparkle on the existing isolated animation-frame path.
+- Review gate: spatial direction, preset usefulness, Sparkle density and decay, and whether colour-cycling should be the next animation tool.
+
 ## Deferred work
 
 - Revisit the reserved `sequence` collection only after the scene and animation workflow is established.

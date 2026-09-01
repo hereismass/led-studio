@@ -158,7 +158,7 @@ export function TimelineLayerRow({
         <button
           className="effect-layer-body"
           type="button"
-          aria-label={`${layer.name}, ${displayNumber(layer.startBeat)} to ${displayNumber(layer.endBeat)} beats`}
+          aria-label={`${layer.name}, ${layer.kind === 'effect' ? `${layer.effect.type} effect, ` : 'keyframes, '}${displayNumber(layer.startBeat)} to ${displayNumber(layer.endBeat)} beats`}
           onClick={onSelect}
           onKeyDown={(event) => onLayerKey(event, 'move')}
           onPointerDown={(event) => onBeginDrag(event, 'move')}

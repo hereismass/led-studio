@@ -25,6 +25,47 @@ export interface SceneEvaluator {
   getFrame(positionBeats: number): LedFrame;
 }
 
+const UINT32_RANGE = 0x1_0000_0000;
+
+export function sparkleHash32(
+  seed: number,
+  stepIndex: number,
+  ledAddress: number,
+): number {
+  let hash = 0x811c_9dc5;
+  hash = Math.imul(hash ^ (seed >>> 0), 0x0100_0193) >>> 0;
+  hash = Math.imul(hash ^ (stepIndex >>> 0), 0x0100_0193) >>> 0;
+  hash = Math.imul(hash ^ (ledAddress >>> 0), 0x0100_0193) >>> 0;
+
+  // FNV combines the persisted inputs cheaply; the MurmurHash3 finalizer gives
+  // adjacent LED addresses the avalanche behavior a spatial effect needs.
+  hash ^= hash >>> 16;
+  hash = Math.imul(hash, 0x85eb_ca6b) >>> 0;
+  hash ^= hash >>> 13;
+  hash = Math.imul(hash, 0xc2b2_ae35) >>> 0;
+  hash ^= hash >>> 16;
+  return hash >>> 0;
+}
+
+function unitPhase(value: number): number {
+  return value - Math.floor(value);
+}
+
+function shapeWaveform(
+  waveform: 'sine' | 'square' | 'triangle',
+  phase: number,
+): number {
+  return waveform === 'sine'
+    ? (1 - Math.cos(phase * Math.PI * 2)) / 2
+    : waveform === 'triangle'
+      ? phase < 0.5
+        ? phase * 2
+        : 2 - phase * 2
+      : phase < 0.5
+        ? 1
+        : 0;
+}
+
 export function keyframesInActiveWindow<T extends { beat: number }>(
   keyframes: readonly T[],
   startBeat: number,
@@ -190,6 +231,7 @@ export function compileSceneEvaluator(
         colour: string;
         keyframes: null;
         layer: EffectLayer;
+        orderedLedAddresses: number[];
         orderedLedIds: string[];
       }
     | {
@@ -199,6 +241,7 @@ export function compileSceneEvaluator(
           colour: ColourKeyframeTrack;
         };
         layer: KeyframeLayer;
+        orderedLedAddresses: number[];
         orderedLedIds: string[];
       };
 
@@ -276,14 +319,18 @@ export function compileSceneEvaluator(
           `Effect layer "${layer.name}" references unknown palette token "${layer.effect.paletteTokenId}"`,
         );
       }
+      const effectOrderedLedIds =
+        layer.effect.type === 'chase' && layer.effect.direction === 'reverse'
+          ? [...orderedLedIds].reverse()
+          : orderedLedIds;
       return {
         colour,
         keyframes: null,
         layer,
-        orderedLedIds:
-          layer.effect.type === 'chase' && layer.effect.direction === 'reverse'
-            ? [...orderedLedIds].reverse()
-            : orderedLedIds,
+        orderedLedAddresses: effectOrderedLedIds.map((ledId) =>
+          ledAddress.get(ledId)!,
+        ),
+        orderedLedIds: effectOrderedLedIds,
       };
     }
     layer.tracks.colour.keyframes.forEach((keyframe) => {
@@ -311,6 +358,7 @@ export function compileSceneEvaluator(
         },
       },
       layer,
+      orderedLedAddresses: orderedLedIds.map((ledId) => ledAddress.get(ledId)!),
       orderedLedIds,
     };
   });
@@ -327,7 +375,9 @@ export function compileSceneEvaluator(
       (layer.kind === 'keyframe'
         ? keyframes!.brightness.length > 0 ||
           keyframes!.colour.keyframes.length > 0
-        : layer.effect.type === 'pulse'),
+        : layer.effect.type === 'pulse' ||
+          layer.effect.type === 'wave' ||
+          (layer.effect.type === 'sparkle' && layer.effect.decay === 'fade')),
   );
   const evaluationLayers = [...compiledLayers].reverse();
   const baseFrameById = new Map(baseFrame.map((led) => [led.ledId, led]));
@@ -349,16 +399,7 @@ export function compileSceneEvaluator(
         position - layer.startBeat + effect.phaseOffsetBeats,
         effect.cycleLengthBeats,
       ) / effect.cycleLengthBeats;
-    const shaped =
-      effect.waveform === 'sine'
-        ? (1 - Math.cos(phase * Math.PI * 2)) / 2
-        : effect.waveform === 'triangle'
-          ? phase < 0.5
-            ? phase * 2
-            : 2 - phase * 2
-          : phase < 0.5
-            ? 1
-            : 0;
+    const shaped = shapeWaveform(effect.waveform, phase);
     const brightnessPercent =
       effect.minBrightnessPercent +
       (effect.maxBrightnessPercent - effect.minBrightnessPercent) * shaped;
@@ -392,6 +433,61 @@ export function compileSceneEvaluator(
           (effect.trailLength + 1);
       }
       if (brightnessPercent === null) return;
+      const current = frameById.get(ledId)!;
+      frameById.set(ledId, { ...current, brightnessPercent, colour });
+    });
+  }
+
+  function applyWave(
+    frameById: Map<string, EvaluatedLed>,
+    layer: EffectLayer,
+    ledIds: readonly string[],
+    colour: string,
+    position: number,
+  ): void {
+    if (layer.effect.type !== 'wave') return;
+    const effect = layer.effect;
+    const temporalPhase =
+      (position - layer.startBeat + effect.phaseOffsetBeats) /
+      effect.cycleLengthBeats;
+    const spatialDirection = effect.direction === 'forward' ? -1 : 1;
+    ledIds.forEach((ledId, index) => {
+      const phase = unitPhase(
+        temporalPhase + spatialDirection * (index / effect.wavelengthLeds),
+      );
+      const shaped = shapeWaveform(effect.waveform, phase);
+      const brightnessPercent =
+        effect.minBrightnessPercent +
+        (effect.maxBrightnessPercent - effect.minBrightnessPercent) * shaped;
+      const current = frameById.get(ledId)!;
+      frameById.set(ledId, { ...current, brightnessPercent, colour });
+    });
+  }
+
+  function applySparkle(
+    frameById: Map<string, EvaluatedLed>,
+    layer: EffectLayer,
+    ledIds: readonly string[],
+    ledAddresses: readonly number[],
+    colour: string,
+    position: number,
+  ): void {
+    if (layer.effect.type !== 'sparkle') return;
+    const effect = layer.effect;
+    const elapsed = position - layer.startBeat;
+    const stepIndex = Math.floor(elapsed / effect.stepLengthBeats);
+    const stepProgress =
+      (elapsed - stepIndex * effect.stepLengthBeats) / effect.stepLengthBeats;
+    const brightnessPercent =
+      effect.decay === 'fade'
+        ? effect.brightnessPercent * (1 - stepProgress)
+        : effect.brightnessPercent;
+    const threshold = effect.densityPercent / 100;
+    ledIds.forEach((ledId, index) => {
+      const sample =
+        sparkleHash32(effect.seed, stepIndex, ledAddresses[index]) /
+        UINT32_RANGE;
+      if (sample >= threshold) return;
       const current = frameById.get(ledId)!;
       frameById.set(ledId, { ...current, brightnessPercent, colour });
     });
@@ -439,7 +535,9 @@ export function compileSceneEvaluator(
               return '-';
             return layer.kind === 'effect' && layer.effect.type === 'chase'
               ? `c${Math.floor((position - layer.startBeat) / layer.effect.stepLengthBeats)}`
-              : '-';
+              : layer.kind === 'effect' && layer.effect.type === 'sparkle'
+                ? `s${Math.floor((position - layer.startBeat) / layer.effect.stepLengthBeats)}`
+                : '-';
           })
           .join('|');
     if (stateKey !== null && stateKey === lastStateKey && lastFrame) {
@@ -448,7 +546,8 @@ export function compileSceneEvaluator(
     }
     const frameById = new Map(baseFrameById);
     for (const compiled of evaluationLayers) {
-      const { colour, keyframes, layer, orderedLedIds } = compiled;
+      const { colour, keyframes, layer, orderedLedAddresses, orderedLedIds } =
+        compiled;
       if (
         !layer.enabled ||
         position < layer.startBeat ||
@@ -457,9 +556,29 @@ export function compileSceneEvaluator(
         continue;
       if (layer.kind === 'keyframe') {
         applyKeyframes(frameById, layer, keyframes!, orderedLedIds, position);
-      } else if (layer.effect.type === 'pulse')
-        applyPulse(frameById, layer, orderedLedIds, colour!, position);
-      else applyChase(frameById, layer, orderedLedIds, colour!, position);
+      } else {
+        switch (layer.effect.type) {
+          case 'pulse':
+            applyPulse(frameById, layer, orderedLedIds, colour!, position);
+            break;
+          case 'chase':
+            applyChase(frameById, layer, orderedLedIds, colour!, position);
+            break;
+          case 'wave':
+            applyWave(frameById, layer, orderedLedIds, colour!, position);
+            break;
+          case 'sparkle':
+            applySparkle(
+              frameById,
+              layer,
+              orderedLedIds,
+              orderedLedAddresses,
+              colour!,
+              position,
+            );
+            break;
+        }
+      }
     }
     lastPosition = position;
     lastStateKey = stateKey;
