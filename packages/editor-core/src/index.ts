@@ -592,11 +592,11 @@ function effectsEqual(left: Effect, right: Effect): boolean {
   if (left.type === 'chase' && right.type === 'chase')
     return (
       left.brightnessPercent === right.brightnessPercent &&
+      left.cycleLengthBeats === right.cycleLengthBeats &&
       left.direction === right.direction &&
       left.paletteTokenId === right.paletteTokenId &&
-      left.stepLengthBeats === right.stepLengthBeats &&
-      left.trailLength === right.trailLength &&
-      left.width === right.width
+      left.trailLengthPositions === right.trailLengthPositions &&
+      left.widthPositions === right.widthPositions
     );
   if (left.type === 'wave' && right.type === 'wave')
     return (
@@ -607,7 +607,7 @@ function effectsEqual(left: Effect, right: Effect): boolean {
       left.paletteTokenId === right.paletteTokenId &&
       left.phaseOffsetBeats === right.phaseOffsetBeats &&
       left.waveform === right.waveform &&
-      left.wavelengthLeds === right.wavelengthLeds
+      left.wavelengthPositions === right.wavelengthPositions
     );
   if (left.type === 'sparkle' && right.type === 'sparkle')
     return (
@@ -1336,6 +1336,7 @@ export function applyEditorCommand(
               command.layerType,
               project.palette[0].id,
               common.id,
+              scene.loopLengthBeats,
             );
       const layer: SceneLayer =
         command.layerType === 'keyframe'

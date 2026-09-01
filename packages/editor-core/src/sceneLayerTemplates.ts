@@ -23,6 +23,7 @@ export function effectLayerTemplate(
   template: Exclude<SceneLayerTemplateId, 'keyframe'>,
   paletteTokenId: string,
   layerId: string,
+  sceneLoopLengthBeats: number,
 ): { effect: Effect; name: string } {
   switch (template) {
     case 'pulse':
@@ -42,19 +43,19 @@ export function effectLayerTemplate(
       return {
         effect: {
           brightnessPercent: 100,
+          cycleLengthBeats: sceneLoopLengthBeats,
           direction: 'forward',
           paletteTokenId,
-          stepLengthBeats: 0.25,
-          trailLength: 0,
+          trailLengthPositions: 0,
           type: 'chase',
-          width: 1,
+          widthPositions: 1,
         },
         name: 'Chase',
       };
     case 'wave':
       return {
         effect: {
-          cycleLengthBeats: 1,
+          cycleLengthBeats: sceneLoopLengthBeats,
           direction: 'forward',
           maxBrightnessPercent: 100,
           minBrightnessPercent: 0,
@@ -62,7 +63,7 @@ export function effectLayerTemplate(
           phaseOffsetBeats: 0,
           type: 'wave',
           waveform: 'sine',
-          wavelengthLeds: 4,
+          wavelengthPositions: 4,
         },
         name: 'Wave',
       };
@@ -96,19 +97,19 @@ export function effectLayerTemplate(
       return {
         effect: {
           brightnessPercent: 100,
+          cycleLengthBeats: sceneLoopLengthBeats,
           direction: 'forward',
           paletteTokenId,
-          stepLengthBeats: 0.25,
-          trailLength: 2,
+          trailLengthPositions: 2,
           type: 'chase',
-          width: 1,
+          widthPositions: 1,
         },
         name: 'Comet',
       };
     case 'preset-rolling-wave':
       return {
         effect: {
-          cycleLengthBeats: 2,
+          cycleLengthBeats: sceneLoopLengthBeats,
           direction: 'forward',
           maxBrightnessPercent: 100,
           minBrightnessPercent: 10,
@@ -116,7 +117,7 @@ export function effectLayerTemplate(
           phaseOffsetBeats: 0,
           type: 'wave',
           waveform: 'sine',
-          wavelengthLeds: 4,
+          wavelengthPositions: 4,
         },
         name: 'Rolling Wave',
       };

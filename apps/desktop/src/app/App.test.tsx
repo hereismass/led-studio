@@ -251,7 +251,7 @@ describe('App project launcher and lifecycle', () => {
     ).toBeInTheDocument();
     expect(
       screen.getByRole('button', {
-        name: /Fret 21 G-side LED, address 0, #FFFFFF at 100%/i,
+        name: /LED 10, Fret 21 G-side LED, physical address 0, #FFFFFF at 100%/i,
       }),
     ).toBeInTheDocument();
     expect(
@@ -311,7 +311,7 @@ describe('App project launcher and lifecycle', () => {
     expect(hotPink).toHaveAttribute('aria-pressed', 'true');
     expect(
       screen.getByRole('button', {
-        name: /Fret 21 G-side LED, address 0, #FF2B9A at 100%/i,
+        name: /LED 10, Fret 21 G-side LED, physical address 0, #FF2B9A at 100%/i,
       }),
     ).toBeInTheDocument();
     const brightness = screen.getByRole('slider', {
@@ -336,7 +336,7 @@ describe('App project launcher and lifecycle', () => {
     await user.click(turnOff);
     expect(
       screen.getByRole('button', {
-        name: /Fret 21 G-side LED, address 0, off/i,
+        name: /LED 10, Fret 21 G-side LED, physical address 0, off/i,
       }),
     ).toBeInTheDocument();
   });
@@ -433,7 +433,10 @@ describe('App project launcher and lifecycle', () => {
       }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole('spinbutton', { name: 'Wavelength (LEDs)' }),
+      screen.getByRole('spinbutton', { name: 'Wavelength (positions)' }),
+    ).toHaveValue(4);
+    expect(
+      screen.getByRole('spinbutton', { name: 'Loop length (beats)' }),
     ).toHaveValue(4);
     await user.click(screen.getByRole('radio', { name: 'Reverse' }));
     expect(screen.getByRole('radio', { name: 'Reverse' })).toHaveAttribute(
@@ -473,8 +476,8 @@ describe('App project launcher and lifecycle', () => {
       }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole('spinbutton', { name: 'Cycle length (beats)' }),
-    ).toHaveValue(2);
+      screen.getByRole('spinbutton', { name: 'Loop length (beats)' }),
+    ).toHaveValue(4);
     expect(
       screen.getByRole('spinbutton', { name: 'Minimum brightness' }),
     ).toHaveValue(10);

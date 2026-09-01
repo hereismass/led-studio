@@ -7,6 +7,7 @@ const StableIdSchema = z
 export const HardwareLedSchema = z
   .object({
     address: z.number().int().nonnegative(),
+    effectPosition: z.number().int().nonnegative(),
     fret: z.number().int().positive().optional(),
     id: StableIdSchema,
     label: z.string().trim().min(1),
@@ -66,6 +67,7 @@ export const HardwareProfileSchema = z
   .superRefine((profile, context) => {
     const ledIds = new Set<string>();
     const addresses = new Set<number>();
+    const effectPositions = new Set<number>();
 
     profile.leds.forEach((led, index) => {
       if (ledIds.has(led.id)) {
@@ -84,6 +86,7 @@ export const HardwareProfileSchema = z
       }
       ledIds.add(led.id);
       addresses.add(led.address);
+      effectPositions.add(led.effectPosition);
     });
 
     const expectedAddresses = Array.from(
@@ -94,6 +97,18 @@ export const HardwareProfileSchema = z
       context.addIssue({
         code: 'custom',
         message: 'LED addresses must be contiguous from zero',
+        path: ['leds'],
+      });
+    }
+
+    const maximumEffectPosition = Math.max(...effectPositions);
+    if (
+      !effectPositions.has(0) ||
+      maximumEffectPosition !== effectPositions.size - 1
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'LED effect positions must be contiguous from zero',
         path: ['leds'],
       });
     }
@@ -139,17 +154,17 @@ export const KMS_PROFILE_ID = 'kms-4-string-10-led-v1' as const;
 export const KMS_E_SIDE_FRETS = [3, 5, 7, 9, 12] as const;
 export const KMS_G_SIDE_FRETS = [12, 15, 17, 19, 21] as const;
 
-const KMS_LED_CHAIN = [
-  { fret: 21, lane: 'g-side' },
-  { fret: 19, lane: 'g-side' },
-  { fret: 17, lane: 'g-side' },
-  { fret: 15, lane: 'g-side' },
-  { fret: 12, lane: 'g-side' },
-  { fret: 12, lane: 'e-side' },
-  { fret: 9, lane: 'e-side' },
-  { fret: 7, lane: 'e-side' },
-  { fret: 5, lane: 'e-side' },
-  { fret: 3, lane: 'e-side' },
+const KMS_LED_LAYOUT = [
+  { address: 9, effectPosition: 0, fret: 3, lane: 'e-side' },
+  { address: 8, effectPosition: 1, fret: 5, lane: 'e-side' },
+  { address: 7, effectPosition: 2, fret: 7, lane: 'e-side' },
+  { address: 6, effectPosition: 3, fret: 9, lane: 'e-side' },
+  { address: 5, effectPosition: 4, fret: 12, lane: 'e-side' },
+  { address: 4, effectPosition: 4, fret: 12, lane: 'g-side' },
+  { address: 3, effectPosition: 5, fret: 15, lane: 'g-side' },
+  { address: 2, effectPosition: 6, fret: 17, lane: 'g-side' },
+  { address: 1, effectPosition: 7, fret: 19, lane: 'g-side' },
+  { address: 0, effectPosition: 8, fret: 21, lane: 'g-side' },
 ] as const;
 
 function ledId(fret: number, lane: 'e-side' | 'g-side'): string {
@@ -163,18 +178,21 @@ function createKmsProfile(): HardwareProfile {
     const distanceFromNut = 1 - 2 ** (-fret / 12);
     return 1 - distanceFromNut / maximumDistance;
   });
-  const leds: HardwareLed[] = KMS_LED_CHAIN.map(({ fret, lane }, address) => {
-    const x = (fretBoundaries[fret - 1] + fretBoundaries[fret]) / 2;
-    const sideName = lane === 'e-side' ? 'E-side' : 'G-side';
-    return {
-      address,
-      fret,
-      id: ledId(fret, lane),
-      label: `Fret ${fret} ${sideName} LED`,
-      lane,
-      position: { x, y: lane === 'e-side' ? 0.1 : 0.9 },
-    };
-  });
+  const leds: HardwareLed[] = KMS_LED_LAYOUT.map(
+    ({ address, effectPosition, fret, lane }) => {
+      const x = (fretBoundaries[fret - 1] + fretBoundaries[fret]) / 2;
+      const sideName = lane === 'e-side' ? 'E-side' : 'G-side';
+      return {
+        address,
+        effectPosition,
+        fret,
+        id: ledId(fret, lane),
+        label: `Fret ${fret} ${sideName} LED`,
+        lane,
+        position: { x, y: lane === 'e-side' ? 0.1 : 0.9 },
+      };
+    },
+  );
 
   const eSideIds = leds
     .filter((led) => led.lane === 'e-side')
@@ -261,7 +279,7 @@ export function validateProjectHardwareReferences(
   }
 
   const ledIds = new Set(profile.leds.map((led) => led.id));
-  const ledAddress = new Map(profile.leds.map((led) => [led.id, led.address]));
+  const ledOrder = new Map(profile.leds.map((led, index) => [led.id, index]));
   const validateLedList = (values: string[], subject: string) => {
     values.forEach((ledId) => {
       if (!ledIds.has(ledId)) {
@@ -271,11 +289,9 @@ export function validateProjectHardwareReferences(
       }
     });
     for (let index = 1; index < values.length; index += 1) {
-      if (
-        ledAddress.get(values[index - 1])! >= ledAddress.get(values[index])!
-      ) {
+      if (ledOrder.get(values[index - 1])! >= ledOrder.get(values[index])!) {
         throw new HardwareCompatibilityError(
-          `${subject} LEDs must follow the hardware address order.`,
+          `${subject} LEDs must follow the hardware profile order.`,
         );
       }
     }

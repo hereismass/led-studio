@@ -63,10 +63,10 @@
             "type": "chase",
             "paletteTokenId": "1a2b3c4d-5e6f-4789-8abc-def012345678",
             "brightnessPercent": 100,
-            "stepLengthBeats": 0.25,
+            "cycleLengthBeats": 4,
             "direction": "forward",
-            "width": 1,
-            "trailLength": 1
+            "widthPositions": 1,
+            "trailLengthPositions": 1
           }
         }
       ],
@@ -107,7 +107,7 @@
             "maxBrightnessPercent": 100,
             "cycleLengthBeats": 2,
             "phaseOffsetBeats": 0,
-            "wavelengthLeds": 4,
+            "wavelengthPositions": 4,
             "waveform": "sine",
             "direction": "forward"
           }
@@ -152,9 +152,9 @@
       "id": "ad56c792-07e6-42d7-84fd-0b509289b4ab",
       "name": "Upper G-side Markers",
       "ledIds": [
-        "fret-21-g-side",
+        "fret-12-g-side",
         "fret-17-g-side",
-        "fret-12-g-side"
+        "fret-21-g-side"
       ]
     }
   ],

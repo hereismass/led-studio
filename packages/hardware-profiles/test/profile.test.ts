@@ -10,31 +10,53 @@ import {
 } from '../src/index.js';
 
 describe('KMS 10-LED profile', () => {
-  it('registers one valid profile with 10 contiguous addresses', () => {
+  it('registers one valid profile with 10 contiguous physical addresses', () => {
     expect(listHardwareProfiles()).toEqual([kmsFourString10LedProfile]);
     expect(getHardwareProfile(kmsFourString10LedProfile.id)).toBe(
       kmsFourString10LedProfile,
     );
     expect(kmsFourString10LedProfile.leds).toHaveLength(10);
-    expect(kmsFourString10LedProfile.leds.map((led) => led.address)).toEqual(
-      Array.from({ length: 10 }, (_, address) => address),
-    );
+    expect(
+      kmsFourString10LedProfile.leds
+        .map((led) => led.address)
+        .sort((left, right) => left - right),
+    ).toEqual(Array.from({ length: 10 }, (_, address) => address));
   });
 
-  it('follows the physical chain from the body to the neck', () => {
+  it('orders editor LEDs from fret 3 to 21 while retaining chain addresses', () => {
     expect(
       kmsFourString10LedProfile.leds.map(({ address, id }) => [address, id]),
     ).toEqual([
-      [0, 'fret-21-g-side'],
-      [1, 'fret-19-g-side'],
-      [2, 'fret-17-g-side'],
-      [3, 'fret-15-g-side'],
-      [4, 'fret-12-g-side'],
-      [5, 'fret-12-e-side'],
-      [6, 'fret-09-e-side'],
-      [7, 'fret-07-e-side'],
-      [8, 'fret-05-e-side'],
       [9, 'fret-03-e-side'],
+      [8, 'fret-05-e-side'],
+      [7, 'fret-07-e-side'],
+      [6, 'fret-09-e-side'],
+      [5, 'fret-12-e-side'],
+      [4, 'fret-12-g-side'],
+      [3, 'fret-15-g-side'],
+      [2, 'fret-17-g-side'],
+      [1, 'fret-19-g-side'],
+      [0, 'fret-21-g-side'],
+    ]);
+  });
+
+  it('groups the two fret-12 LEDs into one contiguous effect position', () => {
+    expect(
+      kmsFourString10LedProfile.leds.map(({ effectPosition, fret }) => [
+        fret,
+        effectPosition,
+      ]),
+    ).toEqual([
+      [3, 0],
+      [5, 1],
+      [7, 2],
+      [9, 3],
+      [12, 4],
+      [12, 4],
+      [15, 5],
+      [17, 6],
+      [19, 7],
+      [21, 8],
     ]);
   });
 
@@ -81,6 +103,12 @@ describe('KMS 10-LED profile', () => {
   it('rejects duplicate or incomplete address maps', () => {
     const invalid = structuredClone(kmsFourString10LedProfile);
     invalid.leds[1].address = 0;
+    expect(HardwareProfileSchema.safeParse(invalid).success).toBe(false);
+  });
+
+  it('rejects effect-position maps with gaps', () => {
+    const invalid = structuredClone(kmsFourString10LedProfile);
+    invalid.leds[1].effectPosition = 2;
     expect(HardwareProfileSchema.safeParse(invalid).success).toBe(false);
   });
 });
@@ -135,13 +163,13 @@ describe('project hardware compatibility', () => {
         groups: [
           {
             id: 'group',
-            ledIds: ['fret-19-g-side', 'fret-21-g-side'],
+            ledIds: ['fret-21-g-side', 'fret-19-g-side'],
             name: 'Out of order',
           },
         ],
         hardwareProfile: kmsFourString10LedProfile.id,
         scenes: [],
       }),
-    ).toThrow(/hardware address order/);
+    ).toThrow(/hardware profile order/);
   });
 });

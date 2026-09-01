@@ -267,8 +267,8 @@ describe('editor commands', () => {
       ),
     );
     expect(project.groups[0].ledIds).toEqual([
-      'fret-21-g-side',
       'fret-03-e-side',
+      'fret-21-g-side',
     ]);
 
     project = applyEditorCommand(
@@ -316,6 +316,11 @@ describe('editor commands', () => {
       id: SCENE_ID,
       type: 'scene-added',
     });
+    project = applyEditorCommand(project, {
+      changes: { loopLengthBeats: 3.25 },
+      id: SCENE_ID,
+      type: 'scene-updated',
+    });
     const templates: SceneLayerTemplateId[] = [
       'wave',
       'sparkle',
@@ -348,6 +353,26 @@ describe('editor commands', () => {
       { name: 'Rolling Wave', type: 'wave' },
       { name: 'Soft Twinkle', type: 'sparkle' },
     ]);
+
+    const wave = project.scenes[0].layers[0];
+    if (wave.kind !== 'effect' || wave.effect.type !== 'wave')
+      throw new Error('Expected Wave');
+    expect(wave.effect).toMatchObject({
+      cycleLengthBeats: 3.25,
+      wavelengthPositions: 4,
+    });
+    const comet = project.scenes[0].layers[3];
+    if (comet.kind !== 'effect' || comet.effect.type !== 'chase')
+      throw new Error('Expected Comet');
+    expect(comet.effect).toMatchObject({
+      cycleLengthBeats: 3.25,
+      trailLengthPositions: 2,
+      widthPositions: 1,
+    });
+    const rollingWave = project.scenes[0].layers[4];
+    if (rollingWave.kind !== 'effect' || rollingWave.effect.type !== 'wave')
+      throw new Error('Expected Rolling Wave');
+    expect(rollingWave.effect.cycleLengthBeats).toBe(3.25);
 
     const sparkle = project.scenes[0].layers[1];
     if (sparkle.kind !== 'effect' || sparkle.effect.type !== 'sparkle')

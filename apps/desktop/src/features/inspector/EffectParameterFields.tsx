@@ -41,7 +41,11 @@ export function EffectParameterFields({
           />
           <NumberDraft
             disabled={disabled}
-            label="Cycle length (beats)"
+            label={
+              effect.type === 'wave'
+                ? 'Loop length (beats)'
+                : 'Cycle length (beats)'
+            }
             min={0.25}
             step={0.25}
             value={effect.cycleLengthBeats}
@@ -62,12 +66,12 @@ export function EffectParameterFields({
           {effect.type === 'wave' ? (
             <NumberDraft
               disabled={disabled}
-              label="Wavelength (LEDs)"
+              label="Wavelength (positions)"
               min={1}
               step={1}
-              value={effect.wavelengthLeds}
-              onCommit={(wavelengthLeds) =>
-                onChange({ ...effect, wavelengthLeds })
+              value={effect.wavelengthPositions}
+              onCommit={(wavelengthPositions) =>
+                onChange({ ...effect, wavelengthPositions })
               }
             />
           ) : null}
@@ -87,19 +91,25 @@ export function EffectParameterFields({
           />
         </div>
         {effect.type === 'wave' ? (
-          <div className="inspector-field">
-            <span>Direction</span>
-            <SegmentedControl
-              ariaLabel="Direction"
-              disabled={disabled}
-              options={[
-                { label: 'Forward', value: 'forward' },
-                { label: 'Reverse', value: 'reverse' },
-              ]}
-              value={effect.direction}
-              onChange={(direction) => onChange({ ...effect, direction })}
-            />
-          </div>
+          <>
+            <div className="inspector-field">
+              <span>Direction</span>
+              <SegmentedControl
+                ariaLabel="Direction"
+                disabled={disabled}
+                options={[
+                  { label: 'Forward', value: 'forward' },
+                  { label: 'Reverse', value: 'reverse' },
+                ]}
+                value={effect.direction}
+                onChange={(direction) => onChange({ ...effect, direction })}
+              />
+            </div>
+            <p className="inspector-help">
+              Loop length is the time until the complete wave pattern returns to
+              its starting state.
+            </p>
+          </>
         ) : null}
       </>
     );
@@ -122,29 +132,33 @@ export function EffectParameterFields({
           />
           <NumberDraft
             disabled={disabled}
-            label="Step length (beats)"
+            label="Loop length (beats)"
             min={0.25}
             step={0.25}
-            value={effect.stepLengthBeats}
-            onCommit={(stepLengthBeats) =>
-              onChange({ ...effect, stepLengthBeats })
+            value={effect.cycleLengthBeats}
+            onCommit={(cycleLengthBeats) =>
+              onChange({ ...effect, cycleLengthBeats })
             }
           />
           <NumberDraft
             disabled={disabled}
-            label="Head width"
+            label="Head width (positions)"
             min={1}
             step={1}
-            value={effect.width}
-            onCommit={(width) => onChange({ ...effect, width })}
+            value={effect.widthPositions}
+            onCommit={(widthPositions) =>
+              onChange({ ...effect, widthPositions })
+            }
           />
           <NumberDraft
             disabled={disabled}
-            label="Trail length"
+            label="Trail length (positions)"
             min={0}
             step={1}
-            value={effect.trailLength}
-            onCommit={(trailLength) => onChange({ ...effect, trailLength })}
+            value={effect.trailLengthPositions}
+            onCommit={(trailLengthPositions) =>
+              onChange({ ...effect, trailLengthPositions })
+            }
           />
         </div>
         <div className="inspector-field">
@@ -160,6 +174,10 @@ export function EffectParameterFields({
             onChange={(direction) => onChange({ ...effect, direction })}
           />
         </div>
+        <p className="inspector-help">
+          Loop length is the time for the chase to visit every targeted visual
+          position once.
+        </p>
       </>
     );
   }

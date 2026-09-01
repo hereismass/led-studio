@@ -173,19 +173,19 @@ describe('scene evaluation', () => {
     expect(evaluator.getFrame(0.5)).toBe(evaluator.getFrame(0.5));
   });
 
-  it('evaluates Chase address order, direction, width, fading trail, and wrap', () => {
+  it('evaluates Chase over grouped effect positions with a clean full loop', () => {
     const chaseScene: Scene = {
       ...scene,
       layers: [
         {
           effect: {
             brightnessPercent: 90,
+            cycleLengthBeats: 4,
             direction: 'forward',
             paletteTokenId: GREEN_ID,
-            stepLengthBeats: 0.25,
-            trailLength: 2,
+            trailLengthPositions: 0,
             type: 'chase',
-            width: 1,
+            widthPositions: 1,
           },
           enabled: true,
           endBeat: 4,
@@ -194,10 +194,7 @@ describe('scene evaluation', () => {
           locked: false,
           name: 'Chase',
           startBeat: 0,
-          target: {
-            kind: 'leds',
-            ledIds: ['fret-17-g-side', 'fret-21-g-side', 'fret-19-g-side'],
-          },
+          target: { groupId: 'all-leds', kind: 'profile-group' },
         },
       ],
     };
@@ -208,23 +205,36 @@ describe('scene evaluation', () => {
       0,
     );
     expect(
-      atStart.slice(0, 3).map(({ brightnessPercent }) => brightnessPercent),
-    ).toEqual([90, 30, 60]);
+      atStart.find(({ ledId }) => ledId === 'fret-03-e-side'),
+    ).toMatchObject({ brightnessPercent: 90, colour: '#45FF72' });
     const chaseEvaluator = compileSceneEvaluator(
       chaseScene,
       palette,
       kmsFourString10LedProfile,
     );
-    expect(chaseEvaluator.getFrame(0.01)).toBe(chaseEvaluator.getFrame(0.24));
+    expect(chaseEvaluator.getFrame(0.01)).toBe(chaseEvaluator.getFrame(0.4));
     const next = evaluateSceneFrame(
       chaseScene,
       palette,
       kmsFourString10LedProfile,
-      0.25,
+      4 / 9 + 0.000_001,
+    );
+    expect(next.find(({ ledId }) => ledId === 'fret-05-e-side')).toMatchObject({
+      brightnessPercent: 90,
+      colour: '#45FF72',
+    });
+    const atTwelfthFret = evaluateSceneFrame(
+      chaseScene,
+      palette,
+      kmsFourString10LedProfile,
+      16 / 9 + 0.000_001,
     );
     expect(
-      next.slice(0, 3).map(({ brightnessPercent }) => brightnessPercent),
-    ).toEqual([60, 90, 30]);
+      atTwelfthFret
+        .filter(({ ledId }) => ledId.startsWith('fret-12-'))
+        .map(({ brightnessPercent }) => brightnessPercent),
+    ).toEqual([90, 90]);
+    expect(chaseEvaluator.getFrame(4)).toEqual(chaseEvaluator.getFrame(0));
     const chaseLayer = chaseScene.layers[0];
     if (chaseLayer.kind !== 'effect' || chaseLayer.effect.type !== 'chase')
       throw new Error('Expected Chase');
@@ -242,19 +252,44 @@ describe('scene evaluation', () => {
       kmsFourString10LedProfile,
       0,
     );
-    expect(reverse[2]).toMatchObject({
+    expect(
+      reverse.find(({ ledId }) => ledId === 'fret-21-g-side'),
+    ).toMatchObject({
       brightnessPercent: 90,
       colour: '#45FF72',
     });
+
+    const withTrail = evaluateSceneFrame(
+      {
+        ...chaseScene,
+        layers: [
+          {
+            ...chaseLayer,
+            effect: { ...chaseLayer.effect, trailLengthPositions: 2 },
+          },
+        ],
+      },
+      palette,
+      kmsFourString10LedProfile,
+      0,
+    );
+    expect(
+      withTrail.find(({ ledId }) => ledId === 'fret-21-g-side')
+        ?.brightnessPercent,
+    ).toBe(60);
+    expect(
+      withTrail.find(({ ledId }) => ledId === 'fret-19-g-side')
+        ?.brightnessPercent,
+    ).toBe(30);
   });
 
-  it('evaluates Wave in physical address order with direction and phase', () => {
+  it('evaluates Wave over grouped positions with direction and loop timing', () => {
     const waveScene: Scene = {
       ...scene,
       layers: [
         {
           effect: {
-            cycleLengthBeats: 1,
+            cycleLengthBeats: 4,
             direction: 'forward',
             maxBrightnessPercent: 100,
             minBrightnessPercent: 0,
@@ -262,7 +297,7 @@ describe('scene evaluation', () => {
             phaseOffsetBeats: 0,
             type: 'wave',
             waveform: 'sine',
-            wavelengthLeds: 4,
+            wavelengthPositions: 4,
           },
           enabled: true,
           endBeat: 4,
@@ -271,15 +306,7 @@ describe('scene evaluation', () => {
           locked: false,
           name: 'Wave',
           startBeat: 0,
-          target: {
-            kind: 'leds',
-            ledIds: [
-              'fret-15-g-side',
-              'fret-21-g-side',
-              'fret-17-g-side',
-              'fret-19-g-side',
-            ],
-          },
+          target: { groupId: 'all-leds', kind: 'profile-group' },
         },
       ],
     };
@@ -289,19 +316,23 @@ describe('scene evaluation', () => {
       kmsFourString10LedProfile,
       0,
     );
-    atStart
-      .slice(0, 4)
-      .map(({ brightnessPercent }) => brightnessPercent)
-      .forEach((brightness, index) =>
-        expect(brightness).toBeCloseTo([0, 50, 100, 50][index]),
-      );
+    const twelfthBrightness = atStart
+      .filter(({ ledId }) => ledId.startsWith('fret-12-'))
+      .map(({ brightnessPercent }) => brightnessPercent);
+    expect(twelfthBrightness[0]).toBeCloseTo(twelfthBrightness[1]);
+    expect(
+      evaluateSceneFrame(waveScene, palette, kmsFourString10LedProfile, 4),
+    ).toEqual(atStart);
     const forward = evaluateSceneFrame(
       waveScene,
       palette,
       kmsFourString10LedProfile,
-      0.25,
+      1,
     );
-    expect(forward[3].brightnessPercent).toBe(100);
+    expect(
+      forward.find(({ ledId }) => ledId === 'fret-05-e-side')
+        ?.brightnessPercent,
+    ).toBeCloseTo(0);
 
     const waveLayer = waveScene.layers[0];
     if (waveLayer.kind !== 'effect' || waveLayer.effect.type !== 'wave')
@@ -318,9 +349,34 @@ describe('scene evaluation', () => {
       },
       palette,
       kmsFourString10LedProfile,
-      0.25,
+      1,
     );
-    expect(reverse[1].brightnessPercent).toBe(100);
+    expect(
+      reverse.find(({ ledId }) => ledId === 'fret-05-e-side')
+        ?.brightnessPercent,
+    ).toBeCloseTo(100);
+
+    const singleTwelfth = evaluateSceneFrame(
+      {
+        ...waveScene,
+        layers: [
+          {
+            ...waveLayer,
+            target: { kind: 'leds', ledIds: ['fret-12-e-side'] },
+          },
+        ],
+      },
+      palette,
+      kmsFourString10LedProfile,
+      1,
+    );
+    expect(
+      singleTwelfth.find(({ ledId }) => ledId === 'fret-12-e-side')?.colour,
+    ).toBe('#FF2B9A');
+    expect(
+      singleTwelfth.find(({ ledId }) => ledId === 'fret-12-g-side')
+        ?.brightnessPercent,
+    ).toBe(0);
   });
 
   it('evaluates deterministic Sparkle steps, pass-through, and fade decay', () => {
@@ -464,12 +520,12 @@ describe('scene evaluation', () => {
         {
           effect: {
             brightnessPercent: 100,
+            cycleLengthBeats: 4,
             direction: 'forward',
             paletteTokenId: GREEN_ID,
-            stepLengthBeats: 0.25,
-            trailLength: 0,
+            trailLengthPositions: 0,
             type: 'chase',
-            width: 1,
+            widthPositions: 1,
           },
           enabled: true,
           endBeat: 4,

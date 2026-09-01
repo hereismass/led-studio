@@ -199,12 +199,12 @@ export const PulseEffectSchema = z
 export const ChaseEffectSchema = z
   .object({
     brightnessPercent: z.number().int().min(0).max(100),
+    cycleLengthBeats: PositiveQuarterBeatSchema,
     direction: EffectDirectionSchema,
     paletteTokenId: PaletteTokenIdSchema,
-    stepLengthBeats: PositiveQuarterBeatSchema,
-    trailLength: z.number().int().min(0),
+    trailLengthPositions: z.number().int().min(0),
     type: z.literal('chase'),
-    width: z.number().int().min(1),
+    widthPositions: z.number().int().min(1),
   })
   .strict();
 
@@ -218,7 +218,7 @@ export const WaveEffectSchema = z
     phaseOffsetBeats: QuarterBeatSchema,
     type: z.literal('wave'),
     waveform: EffectWaveformSchema,
-    wavelengthLeds: z.number().int().min(1),
+    wavelengthPositions: z.number().int().min(1),
   })
   .strict()
   .refine(

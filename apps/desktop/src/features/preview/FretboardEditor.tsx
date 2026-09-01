@@ -246,7 +246,7 @@ export function FretboardEditor({
           onPointerUp={finishMarquee}
           onPointerCancel={() => setMarquee(null)}
         />
-        {profile.leds.map((led) => {
+        {profile.leds.map((led, logicalIndex) => {
           const point = ledPoint(led.position);
           const state = output.get(led.id);
           const lit = Boolean(
@@ -254,8 +254,8 @@ export function FretboardEditor({
           );
           const colour = state?.colour ?? '#5D5663';
           const label = lit
-            ? `${led.label}, address ${led.address}, ${colour} at ${displayBrightness(state!.brightnessPercent)}%`
-            : `${led.label}, address ${led.address}, off`;
+            ? `LED ${logicalIndex + 1}, ${led.label}, physical address ${led.address}, ${colour} at ${displayBrightness(state!.brightnessPercent)}%`
+            : `LED ${logicalIndex + 1}, ${led.label}, physical address ${led.address}, off`;
           return (
             <g
               aria-label={label}

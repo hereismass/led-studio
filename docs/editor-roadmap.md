@@ -40,8 +40,8 @@ Implementation complete; the UI review gate is open for feedback.
 Implementation complete; the scene workflow and fretboard review gate are open for feedback.
 
 - Add an independent hardware-profile registry. Projects continue to store only the profile ID.
-- Define profile geometry using stable LED IDs, physical addresses, normalized coordinates, labels, and built-in groups.
-- Add the 10-LED KMS profile and validate its body-to-neck chain addresses, E-side positions, and G-side positions.
+- Define profile geometry using stable LED IDs, canonical editor order, grouped effect positions, physical addresses, normalized coordinates, labels, and built-in groups.
+- Add the 10-LED KMS profile and validate its fret-3-to-fret-21 editor order independently from its body-to-neck chain addresses, E-side positions, and G-side positions.
 - Render the central hardware surface with SVG initially; 10 elements do not justify Canvas or WebGL yet.
 - Add reusable static scenes with:
   - stable ID and editable name;
@@ -87,7 +87,7 @@ Implementation complete; the layer, targeting, and timeline review gate is open 
 - Add layer rows and duration bars to the Scene Timeline, with editing in the contextual inspector.
 - Add user-defined LED groups now that reusable animation targeting needs them.
 - Keep evaluation deterministic and define compositing centrally rather than in individual UI components.
-- Pulse supports waveform and phase shaping. Chase supports direction, head width, and a fading trail.
+- Pulse supports waveform and phase shaping. Chase supports a complete loop length, direction, position-based head width, and a fading trail.
 - Custom groups are project-wide linked assets; changing their members updates every layer that targets them.
 - Layer bars support quarter-beat drag, resize, keyboard adjustment, exact inspector values, ordering, locking, and grouped undo.
 - Review gate: layer model, targeting, ordering, and whether the timeline remains understandable.
@@ -145,7 +145,7 @@ Implementation complete; the easing presets and timeline-curve review gate is op
 
 Implementation complete; the Wave, Sparkle, and quick-start preset review gate is open for feedback.
 
-- Add a Wave effect that offsets sine, triangle, or square brightness across targets in physical LED-address order.
+- Add a Wave effect that offsets sine, triangle, or square brightness across profile-defined effect positions, grouping LEDs that share one visual position.
 - Add deterministic Sparkle with configurable density, musical step length, hold/fade decay, and an explicitly reseedable hidden seed.
 - Keep inactive Sparkle LEDs transparent to lower layers while retaining the existing replacement compositing model.
 - Add Slow Breath, Comet, Rolling Wave, and Soft Twinkle quick starts that create ordinary editable layers without persisted preset references.

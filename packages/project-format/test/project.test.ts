@@ -234,12 +234,12 @@ describe('ProjectSchema', () => {
             {
               effect: {
                 brightnessPercent: 80,
+                cycleLengthBeats: 4,
                 direction: 'reverse',
                 paletteTokenId: ELECTRIC_GREEN_ID,
-                stepLengthBeats: 0.25,
-                trailLength: 2,
+                trailLengthPositions: 2,
                 type: 'chase',
-                width: 1,
+                widthPositions: 1,
               },
               enabled: true,
               endBeat: 4,
@@ -260,7 +260,7 @@ describe('ProjectSchema', () => {
                 phaseOffsetBeats: 0,
                 type: 'wave',
                 waveform: 'triangle',
-                wavelengthLeds: 4,
+                wavelengthPositions: 4,
               },
               enabled: true,
               endBeat: 4,
@@ -305,7 +305,16 @@ describe('ProjectSchema', () => {
     ).toEqual(['pulse', 'chase', 'wave', 'sparkle']);
   });
 
-  it('rejects invalid Wave and Sparkle parameters', () => {
+  it('rejects invalid Chase, Wave, and Sparkle parameters', () => {
+    const chase = {
+      brightnessPercent: 100,
+      cycleLengthBeats: 4,
+      direction: 'forward',
+      paletteTokenId: HOT_PINK_ID,
+      trailLengthPositions: 2,
+      type: 'chase',
+      widthPositions: 1,
+    } as const;
     const wave = {
       cycleLengthBeats: 2,
       direction: 'forward',
@@ -315,7 +324,7 @@ describe('ProjectSchema', () => {
       phaseOffsetBeats: 0,
       type: 'wave',
       waveform: 'sine',
-      wavelengthLeds: 4,
+      wavelengthPositions: 4,
     } as const;
     const sparkle = {
       brightnessPercent: 100,
@@ -334,11 +343,21 @@ describe('ProjectSchema', () => {
         minBrightnessPercent: 21,
       }).success,
     ).toBe(false);
-    expect(EffectSchema.safeParse({ ...wave, wavelengthLeds: 0 }).success).toBe(
-      false,
-    );
+    expect(
+      EffectSchema.safeParse({ ...wave, wavelengthPositions: 0 }).success,
+    ).toBe(false);
     expect(
       EffectSchema.safeParse({ ...wave, cycleLengthBeats: 0.3 }).success,
+    ).toBe(false);
+    expect(
+      EffectSchema.safeParse({ ...chase, cycleLengthBeats: 0.3 }).success,
+    ).toBe(false);
+    expect(
+      EffectSchema.safeParse({
+        ...chase,
+        cycleLengthBeats: undefined,
+        stepLengthBeats: 0.25,
+      }).success,
     ).toBe(false);
     expect(
       EffectSchema.safeParse({ ...sparkle, densityPercent: 101 }).success,

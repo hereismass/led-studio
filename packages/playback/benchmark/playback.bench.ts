@@ -85,7 +85,7 @@ const spatialScene: Scene = {
             phaseOffsetBeats: index % 4,
             type: 'wave',
             waveform: 'sine',
-            wavelengthLeds: 4,
+            wavelengthPositions: 4,
           },
           enabled: true,
           endBeat: 4,
