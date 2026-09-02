@@ -2,7 +2,7 @@
 
 ## Summary
 
-Build the editor through runnable, reviewable milestones. Stop after each milestone for UI feedback before its assumptions spread into later features. Scene creation, preview, animation, and the shared-scene song/cue model are implemented; external-control work remains deferred.
+Build the editor through runnable, reviewable milestones. Stop after each milestone for UI feedback before its assumptions spread into later features. Scene creation, preview, animation, and the shared-scene song/cue model are implemented. A separate controller-foundation milestone has started; project compilation and external control remain deferred.
 
 ## Milestones
 
@@ -152,6 +152,18 @@ Implementation complete; the Wave, Sparkle, and quick-start preset review gate i
 - Preserve all effect parameters through project validation, undo/redo, duplication, clipboard operations, and save/load.
 - Cache stepped Sparkle frames while keeping Wave and fading Sparkle on the existing isolated animation-frame path.
 - Review gate: spatial direction, preset usefulness, Sparkle density and decay, and whether colour-cycling should be the next animation tool.
+
+### 10. Controller foundation
+
+Implementation started; host-side runtime verification and the Zephyr 4.4.2 XIAO build are complete, while flashing and physical LED-chain review remain open.
+
+- Define the first KMS controller contract: ten electrical addresses, shared fret-12 effect position, GRB driver mapping, temporary 50% output limit, 60 Hz rendering, Q16.16 musical time, and hard cue cuts.
+- Scaffold a Zephyr application for the XIAO nRF52840 and its WS2812-compatible chain on D0 through the level shifter.
+- Keep transport, timing, frame preparation, and validation in portable C with strict host-side tests.
+- Use monotonic elapsed time so delayed output frames preserve song and cue timing.
+- Run an address walk and RGB calibration sequence before a built-in two-scene test song.
+- Keep the hardware profile authoritative in TypeScript; firmware consumes electrical-address frames instead of duplicating editor geometry.
+- Review gate: flash the XIAO when useful, then confirm address/channel order, inspect 60 Hz motion, and measure the 50% limit after the LED-chain hardware arrives.
 
 ## Deferred work
 

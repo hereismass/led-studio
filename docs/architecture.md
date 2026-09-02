@@ -58,3 +58,9 @@ A React error boundary surrounds the project workspace. If rendering fails, the 
 ## Native boundary
 
 Tauri owns OS dialogs, project file paths, atomic persistence, and application exit coordination. File reads and writes run on the blocking task pool, enforce the 32 MiB project-file limit, and return stable structured error codes. Opaque paths are explicitly released from the native registry when files are replaced, rejected, or closed. The webview receives only the minimum commands and capabilities it needs. There is no network service or external backend.
+
+## Controller firmware
+
+`firmware/controller` is a Zephyr application for the XIAO nRF52840. Its transport, fixed-point timing, framebuffer, and output limiting are portable C with host-side tests; Zephyr-specific scheduling and LED-strip output remain in the application entry point. Musical position derives from monotonic elapsed time rather than rendered-frame count, so delayed frames do not slow cue progression.
+
+Firmware framebuffers use electrical-address order and do not duplicate editor geometry. `packages/hardware-profiles` remains the source of truth for editor order, effect positions, and electrical addresses; a future compiler will resolve project references into controller-ready data. The initial firmware uses a built-in test song until that compact device format and compiler exist.

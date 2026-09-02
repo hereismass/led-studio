@@ -2,5 +2,6 @@ node_modules/
 dist/
 target/
 apps/desktop/src-tauri/gen/
+firmware/controller/build/
 .DS_Store
 *.log

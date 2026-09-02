@@ -9,6 +9,7 @@ This repository is a pnpm workspace so it can also contain controller firmware a
 ## Repository layout
 
 - `apps/desktop` — Tauri v2, React, and TypeScript desktop application
+- `firmware/controller` — Zephyr controller application and portable C runtime
 - `packages/project-format` — UI-independent project validation and TypeScript types
 - `packages/editor-core` — UI-independent project creation, editor commands, and bounded grouped history
 - `packages/hardware-profiles` — UI-independent hardware geometry, addressing, groups, and compatibility validation
@@ -65,6 +66,12 @@ Run all non-bundling checks together with:
 pnpm check
 ```
 
+The portable controller runtime can also be tested independently with:
+
+```sh
+pnpm test:firmware
+```
+
 For repeatable microbenchmarks of the large editor-command and playback paths:
 
 ```sh
@@ -89,4 +96,4 @@ To keep editing and playback responsive when opening untrusted local files, v2 c
 
 ## Deliberately out of scope
 
-There is currently no palette or scene reordering, setlist model, autosave, recovery backup, native File menu, system clipboard integration, custom effect presets, freeform keyframe curve editor, blend modes, MIDI or Ableton integration, external clock, Bluetooth, USB communication, OLED or footswitch support, firmware, device-package export, external backend, cloud service, account system, database, or external API.
+There is currently no palette or scene reordering, setlist model, autosave, recovery backup, native File menu, system clipboard integration, custom effect presets, freeform keyframe curve editor, blend modes, MIDI or Ableton integration, external clock, Bluetooth, USB communication, OLED or footswitch support, device-package export, external backend, cloud service, account system, database, or external API. Controller firmware is at its initial hard-coded bring-up stage and cannot yet load editor projects.
