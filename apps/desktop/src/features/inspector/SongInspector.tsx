@@ -3,7 +3,7 @@ import type {
   Song,
   SongLaunchQuantization,
 } from '@led-studio/project-format';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ChoiceMenu } from '@/shared/ui/ChoiceMenu';
 import { SegmentedControl } from '@/shared/ui/SegmentedControl';
 import { NumberDraft } from './NumberDraft';
@@ -40,6 +40,7 @@ export function SongInspector({
 }: SongInspectorProps) {
   const [name, setName] = useState(song.name);
   const [nameError, setNameError] = useState<string | null>(null);
+  const skipNameBlurRef = useRef(false);
   const index = songs.findIndex(({ id }) => id === song.id);
 
   useEffect(() => {
@@ -87,10 +88,18 @@ export function SongInspector({
             setName(event.target.value);
             setNameError(null);
           }}
-          onBlur={commitName}
+          onBlur={() => {
+            if (skipNameBlurRef.current) {
+              skipNameBlurRef.current = false;
+              return;
+            }
+            commitName();
+          }}
           onKeyDown={(event) => {
             if (event.key === 'Enter') commitName();
             if (event.key === 'Escape') {
+              event.preventDefault();
+              skipNameBlurRef.current = true;
               setName(song.name);
               setNameError(null);
               event.currentTarget.blur();

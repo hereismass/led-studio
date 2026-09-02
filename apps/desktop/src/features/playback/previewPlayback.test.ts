@@ -88,6 +88,19 @@ describe('PreviewPlaybackController', () => {
     expect(controller.getSnapshot().positionBeats).toBe(0);
   });
 
+  it('reports the full elapsed beat delta when a frame spans several loops', () => {
+    const { clock, controller } = configuredController();
+    const listener = vi.fn();
+    controller.subscribeBeatAdvance(listener);
+    controller.play();
+
+    clock.step(4_500);
+
+    expect(controller.getSnapshot().positionBeats).toBe(1);
+    expect(listener).toHaveBeenCalledOnce();
+    expect(listener).toHaveBeenCalledWith(9);
+  });
+
   it('exposes a stable quarter-beat authoring position between snap points', () => {
     const { controller } = configuredController();
     controller.seek(1.02);

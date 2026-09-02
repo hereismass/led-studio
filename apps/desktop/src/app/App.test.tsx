@@ -232,6 +232,54 @@ describe('App project launcher and lifecycle', () => {
     ).toHaveTextContent('Scene 1');
   });
 
+  it('cancels song-name drafts with Escape without committing on blur', async () => {
+    const user = userEvent.setup();
+    renderApp();
+
+    await user.click(screen.getByRole('button', { name: /new project/i }));
+    await user.click(screen.getByRole('option', { name: /Song 1.*1 cue/i }));
+    const inspector = screen.getByRole('complementary', { name: 'Inspector' });
+    const songName = within(inspector).getByRole('textbox', {
+      name: 'Song name',
+    });
+
+    await user.clear(songName);
+    await user.type(songName, 'Uncommitted name{Escape}');
+
+    expect(songName).toHaveValue('Song 1');
+    expect(
+      within(screen.getByRole('listbox', { name: 'Songs' })).getByRole(
+        'option',
+        { name: /Song 1.*1 cue/i },
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('restores a cue-name draft when the command rejects a duplicate', async () => {
+    const user = userEvent.setup();
+    renderApp();
+
+    await user.click(screen.getByRole('button', { name: /new project/i }));
+    await user.click(screen.getByRole('button', { name: 'Add scene' }));
+    await user.click(screen.getByRole('option', { name: /Song 1.*1 cue/i }));
+    const songPanel = screen.getByRole('tabpanel', { name: 'Song cues' });
+    await user.click(
+      within(songPanel).getByRole('button', { name: 'Add scene cue' }),
+    );
+    await user.click(screen.getByRole('option', { name: 'Scene 2' }));
+    const cueName = within(songPanel).getByRole('textbox', {
+      name: 'Cue 2 name',
+    });
+
+    fireEvent.change(cueName, { target: { value: 'Scene 1' } });
+    fireEvent.blur(cueName);
+
+    expect(cueName).toHaveValue('Scene 2');
+    expect(within(songPanel).getByRole('alert')).toHaveTextContent(
+      'Cue name "Scene 1" is already in use.',
+    );
+  });
+
   it('edits the project name as one undoable command', async () => {
     const user = userEvent.setup();
     renderApp();

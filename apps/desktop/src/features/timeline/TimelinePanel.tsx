@@ -15,6 +15,7 @@ import type {
 } from '@led-studio/project-format';
 import type { PreviewPlaybackController } from '@/features/playback/previewPlayback';
 import { SceneTimeline } from './SceneTimeline';
+import type { CueUpdateResult } from './SongCueRow';
 import { SongCueTimeline } from './SongCueTimeline';
 import type { TimelineSnap, TimelineZoomMode } from './timelinePreferences';
 
@@ -65,7 +66,7 @@ interface TimelinePanelProps {
   onUpdateCue: (
     id: string,
     changes: Partial<Pick<SongCue, 'advance' | 'name' | 'sceneId'>>,
-  ) => void;
+  ) => CueUpdateResult;
   onUpdateKeyframes: (
     layerId: string,
     keyframes: KeyframeMove[],

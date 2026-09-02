@@ -64,20 +64,54 @@ export function advanceSongPlaybackState(
   state: SongPlaybackState,
   elapsedBeats: number,
 ): SongPlaybackState {
+  return compileSongPlayback(song, scenes).advance(state, elapsedBeats);
+}
+
+export interface CompiledSongPlayback {
+  advance(state: SongPlaybackState, elapsedBeats: number): SongPlaybackState;
+}
+
+export function compileSongPlayback(
+  song: Song,
+  scenes: readonly Scene[],
+): CompiledSongPlayback {
+  const scenesById = new Map(scenes.map((scene) => [scene.id, scene]));
+  const cueIndexesById = new Map(
+    song.cues.map((cue, index) => [cue.id, index]),
+  );
+  return {
+    advance: (state, elapsedBeats) =>
+      advanceCompiledSongPlayback(
+        song,
+        scenesById,
+        cueIndexesById,
+        state,
+        elapsedBeats,
+      ),
+  };
+}
+
+function advanceCompiledSongPlayback(
+  song: Song,
+  scenesById: ReadonlyMap<string, Scene>,
+  cueIndexesById: ReadonlyMap<string, number>,
+  state: SongPlaybackState,
+  elapsedBeats: number,
+): SongPlaybackState {
   if (!Number.isFinite(elapsedBeats) || elapsedBeats < 0)
     throw new RangeError('Elapsed beats must be finite and non-negative');
-  if (state.activeCueId === null || elapsedBeats === 0) return state;
+  const activeCueId = state.activeCueId;
+  if (activeCueId === null || elapsedBeats === 0) return state;
 
-  const scenesById = new Map(scenes.map((scene) => [scene.id, scene]));
   let remaining = elapsedBeats;
   let next = { ...state };
   let transitions = 0;
+  let cueIndex = cueIndexesById.get(activeCueId);
+  if (cueIndex === undefined)
+    throw new Error(
+      `Song "${song.name}" does not contain active cue "${next.activeCueId}"`,
+    );
   while (remaining > 0) {
-    const cueIndex = song.cues.findIndex(({ id }) => id === next.activeCueId);
-    if (cueIndex === -1)
-      throw new Error(
-        `Song "${song.name}" does not contain active cue "${next.activeCueId}"`,
-      );
     const cue = song.cues[cueIndex];
     const scene = scenesById.get(cue.sceneId);
     if (!scene)
@@ -98,7 +132,13 @@ export function advanceSongPlaybackState(
     ) {
       const followingCue = song.cues[cueIndex + 1];
       if (followingCue) {
-        next = launchSongCue(song, next, followingCue.id);
+        cueIndex += 1;
+        next = {
+          activeCueId: followingCue.id,
+          completedLoops: 0,
+          cuePositionBeats: 0,
+          finalCueHeld: false,
+        };
       } else {
         next.finalCueHeld = true;
       }

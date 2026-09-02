@@ -5,6 +5,7 @@ import {
   advanceLoopPosition,
   advanceSongPlaybackState,
   applyKeyframeEasing,
+  compileSongPlayback,
   compileSceneEvaluator,
   createSongPlaybackState,
   evaluateBrightnessTrack,
@@ -90,25 +91,16 @@ describe('song playback', () => {
   };
 
   it('advances automatic cues after their configured scene loops', () => {
+    const compiled = compileSongPlayback(song, [scene, secondScene]);
     const initial = createSongPlaybackState(song);
-    const beforeBoundary = advanceSongPlaybackState(
-      song,
-      [scene, secondScene],
-      initial,
-      7.5,
-    );
+    const beforeBoundary = compiled.advance(initial, 7.5);
     expect(beforeBoundary).toMatchObject({
       activeCueId: song.cues[0].id,
       completedLoops: 1,
       cuePositionBeats: 3.5,
     });
 
-    const advanced = advanceSongPlaybackState(
-      song,
-      [scene, secondScene],
-      beforeBoundary,
-      1,
-    );
+    const advanced = compiled.advance(beforeBoundary, 1);
     expect(advanced).toMatchObject({
       activeCueId: song.cues[1].id,
       completedLoops: 0,

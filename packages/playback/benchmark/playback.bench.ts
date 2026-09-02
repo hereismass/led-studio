@@ -3,9 +3,14 @@ import type {
   PaletteToken,
   Scene,
   SceneLayer,
+  Song,
 } from '@led-studio/project-format';
 import { bench, describe } from 'vitest';
-import { compileSceneEvaluator } from '../src/index.js';
+import {
+  compileSceneEvaluator,
+  compileSongPlayback,
+  createSongPlaybackState,
+} from '../src/index.js';
 
 function uuid(index: number): string {
   return `00000000-0000-4000-8000-${index.toString(16).padStart(12, '0')}`;
@@ -118,6 +123,21 @@ const spatialScene: Scene = {
   ),
   name: 'Spatial effects benchmark scene',
 };
+const song: Song = {
+  cues: Array.from({ length: 512 }, (_, index) => ({
+    advance: { kind: 'after-loops' as const, loopCount: 1 },
+    id: uuid(40_000 + index),
+    name: `Cue ${index + 1}`,
+    sceneId: scene.id,
+  })),
+  id: uuid(39_999),
+  launchQuantization: 'next-bar',
+  name: 'Benchmark song',
+  timing: {
+    previewBpm: 120,
+    timeSignature: { denominator: 4, numerator: 4 },
+  },
+};
 
 describe('large scene playback', () => {
   bench('compile 512 animated layers', () => {
@@ -155,5 +175,22 @@ describe('large scene playback', () => {
   bench('evaluate a track with 4096 ordered keys', () => {
     keyframePosition = (keyframePosition + 1.25) % 4096;
     keyframeEvaluator.getFrame(keyframePosition);
+  });
+});
+
+describe('large song playback', () => {
+  bench('compile a 512-cue song transport', () => {
+    compileSongPlayback(song, [scene]);
+  });
+
+  const playback = compileSongPlayback(song, [scene]);
+  let state = createSongPlaybackState(song);
+  bench('advance a compiled 512-cue song transport', () => {
+    state = playback.advance(state, 1 / 240);
+  });
+
+  const initialState = createSongPlaybackState(song);
+  bench('recover across 511 cue boundaries after a delayed frame', () => {
+    playback.advance(initialState, 2_044.5);
   });
 });

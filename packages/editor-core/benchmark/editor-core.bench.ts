@@ -8,6 +8,7 @@ import { bench, describe } from 'vitest';
 import {
   applyEditorCommand,
   createSceneDuplicatedCommand,
+  createSongDuplicatedCommand,
 } from '../src/index.js';
 
 function uuid(index: number): string {
@@ -73,6 +74,45 @@ describe('large editor commands', () => {
   );
   bench('apply a 512-layer scene duplicate', () => {
     applyEditorCommand(project, duplicate);
+  });
+
+  const songProject: Project = {
+    ...project,
+    songs: [
+      {
+        cues: Array.from(
+          { length: PROJECT_LIMITS.cuesPerSong },
+          (_, index) => ({
+            advance: { kind: 'manual' as const },
+            id: uuid(60_000 + index),
+            name: `Cue ${index + 1}`,
+            sceneId,
+          }),
+        ),
+        id: uuid(59_999),
+        launchQuantization: 'next-bar',
+        name: 'Large Song',
+        timing: project.timing,
+      },
+    ],
+  };
+  let generatedSongId = 70_000;
+  bench('prepare a 512-cue song duplicate', () => {
+    createSongDuplicatedCommand(songProject, uuid(59_999), () =>
+      uuid(generatedSongId++),
+    );
+  });
+
+  const songDuplicate = createSongDuplicatedCommand(
+    songProject,
+    uuid(59_999),
+    (() => {
+      let nextId = 80_000;
+      return () => uuid(nextId++);
+    })(),
+  );
+  bench('apply a 512-cue song duplicate', () => {
+    applyEditorCommand(songProject, songDuplicate);
   });
 
   const keyframeLayer: SceneLayer = {

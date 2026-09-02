@@ -145,6 +145,14 @@
   border: 1px solid #332f39;
   border-radius: 9px;
   background: #1b181f;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 54px;
+}
+
+.song-cue-name-error {
+  color: #ff86b9;
+  font-size: 0.62rem;
+  line-height: 1.2;
 }
 
 .song-cue-card[data-active='true'] {

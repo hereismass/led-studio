@@ -28,6 +28,7 @@ const initialSnapshot: PreviewPlaybackSnapshot = {
 };
 
 export class PreviewPlaybackController {
+  private beatAdvanceListeners = new Set<(elapsedBeats: number) => void>();
   private beatsPerMinute = 120;
   private disposed = false;
   private frameHandle: number | null = null;
@@ -36,6 +37,7 @@ export class PreviewPlaybackController {
   private loopLengthBeats = 4;
   private sceneId: string | null = null;
   private snapshot = initialSnapshot;
+  private seekListeners = new Set<(positionBeats: number) => void>();
 
   constructor(
     private readonly environment: PreviewPlaybackEnvironment = {
@@ -61,6 +63,20 @@ export class PreviewPlaybackController {
   readonly subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  };
+
+  readonly subscribeBeatAdvance = (
+    listener: (elapsedBeats: number) => void,
+  ): (() => void) => {
+    this.beatAdvanceListeners.add(listener);
+    return () => this.beatAdvanceListeners.delete(listener);
+  };
+
+  readonly subscribeSeek = (
+    listener: (positionBeats: number) => void,
+  ): (() => void) => {
+    this.seekListeners.add(listener);
+    return () => this.seekListeners.delete(listener);
   };
 
   configure({
@@ -143,12 +159,15 @@ export class PreviewPlaybackController {
       this.snapshot.status === 'stopped' ? 'paused' : this.snapshot.status;
     if (status === 'playing') this.lastTimestamp = this.environment.now();
     this.update({ positionBeats: nextPosition, status });
+    this.seekListeners.forEach((listener) => listener(nextPosition));
   }
 
   dispose(): void {
     if (this.disposed) return;
     this.cancelScheduledFrame();
+    this.beatAdvanceListeners.clear();
     this.listeners.clear();
+    this.seekListeners.clear();
     this.disposed = true;
   }
 
@@ -168,8 +187,17 @@ export class PreviewPlaybackController {
       this.frameHandle = null;
       if (this.snapshot.status !== 'playing' || this.disposed) return;
       const positionBeats = this.positionAt(timestamp);
+      const elapsedBeats =
+        this.lastTimestamp === null
+          ? 0
+          : (Math.max(0, timestamp - this.lastTimestamp) *
+              this.beatsPerMinute) /
+            60_000;
       this.lastTimestamp = timestamp;
       this.update({ positionBeats, status: 'playing' });
+      if (elapsedBeats > 0) {
+        this.beatAdvanceListeners.forEach((listener) => listener(elapsedBeats));
+      }
       this.scheduleFrame();
     });
   }

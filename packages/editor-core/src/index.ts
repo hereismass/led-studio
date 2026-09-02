@@ -7,7 +7,6 @@ import {
   HexColourSchema,
   BrightnessKeyframeSchema,
   ColourKeyframeSchema,
-  CueAdvanceSchema,
   EffectLayerSchema,
   EffectSchema,
   KeyframeEasingSchema,
@@ -29,9 +28,6 @@ import {
   SceneLayerSchema,
   SceneLoopLengthSchema,
   SceneNameSchema,
-  SongCueSchema,
-  SongLaunchQuantizationSchema,
-  SongSchema,
   parseProject,
   type BrightnessKeyframe,
   type ColourKeyframe,
@@ -45,8 +41,6 @@ import {
   type ProjectTiming,
   type Scene,
   type SceneLayer,
-  type Song,
-  type SongCue,
 } from '@led-studio/project-format';
 import {
   paletteTokenUsageCount,
@@ -59,6 +53,22 @@ import {
   effectLayerTemplate,
   type SceneLayerTemplateId,
 } from './sceneLayerTemplates.js';
+import {
+  assertCollectionCapacity,
+  assertNewEntityId,
+  assertNewEntityIds,
+  createEntityId,
+  EditorCommandError,
+  normalizedName,
+  parseCommandValue,
+  uniqueName,
+  type ProjectEntityIdFactory,
+} from './commandSupport.js';
+import {
+  applySongEditorCommand,
+  isSongEditorCommand,
+  type SongEditorCommand,
+} from './songCommands.js';
 
 export {
   paletteTokenUsageCount,
@@ -79,6 +89,18 @@ export {
   type EffectLayerPresetId,
   type SceneLayerTemplateId,
 } from './sceneLayerTemplates.js';
+export {
+  EditorCommandError,
+  type EditorCommandErrorCode,
+  type ProjectEntityIdFactory,
+} from './commandSupport.js';
+export {
+  createSongAddedCommand,
+  createSongCueAddedCommand,
+  createSongCueDuplicatedCommand,
+  createSongDuplicatedCommand,
+  type SongEditorCommand,
+} from './songCommands.js';
 import type { EditorHistory, EditorHistoryTransition } from './history.js';
 
 export type KeyframeTrackKind = 'brightness' | 'colour';
@@ -132,6 +154,7 @@ export type KeyframeValue =
     };
 
 export type EditorCommand =
+  | SongEditorCommand
   | { name: string; type: 'project-renamed' }
   | { changes: Partial<ProjectTiming>; type: 'project-timing-updated' }
   | { id: string; type: 'palette-token-added' }
@@ -169,35 +192,6 @@ export type EditorCommand =
       type: 'scene-led-brightness-set';
     }
   | { ledIds: string[]; sceneId: string; type: 'scene-leds-turned-off' }
-  | { id: string; type: 'song-added' }
-  | {
-      changes: Partial<Pick<Song, 'launchQuantization' | 'name' | 'timing'>>;
-      id: string;
-      type: 'song-updated';
-    }
-  | {
-      cueIds: string[];
-      id: string;
-      sourceId: string;
-      type: 'song-duplicated';
-    }
-  | { id: string; type: 'song-deleted' }
-  | { id: string; toIndex: number; type: 'song-moved' }
-  | { id: string; sceneId: string; songId: string; type: 'song-cue-added' }
-  | {
-      changes: Partial<Pick<SongCue, 'advance' | 'name' | 'sceneId'>>;
-      id: string;
-      songId: string;
-      type: 'song-cue-updated';
-    }
-  | {
-      id: string;
-      newId: string;
-      songId: string;
-      type: 'song-cue-duplicated';
-    }
-  | { id: string; songId: string; type: 'song-cue-deleted' }
-  | { id: string; songId: string; toIndex: number; type: 'song-cue-moved' }
   | { id: string; ledIds: string[]; type: 'group-added' }
   | {
       changes: Partial<Pick<ProjectGroup, 'ledIds' | 'name'>>;
@@ -302,32 +296,9 @@ export type EditorCommand =
       type: 'keyframes-pasted';
     };
 
-export type EditorCommandErrorCode =
-  | 'duplicate-entity-id'
-  | 'duplicate-name'
-  | 'invalid-command'
-  | 'missing-entity'
-  | 'entity-in-use'
-  | 'locked-entity'
-  | 'palette-token-in-use'
-  | 'unknown-hardware-profile';
-
-export class EditorCommandError extends Error {
-  constructor(
-    readonly code: EditorCommandErrorCode,
-    message: string,
-    readonly referenceCount?: number,
-  ) {
-    super(message);
-    this.name = 'EditorCommandError';
-  }
-}
-
 export interface ExecuteEditorCommandOptions {
   historyGroupId?: string;
 }
-
-export type ProjectEntityIdFactory = () => string;
 
 export interface CreateDefaultProjectInput {
   name: string;
@@ -336,80 +307,6 @@ export interface CreateDefaultProjectInput {
 
 function generateProjectEntityId(): string {
   return globalThis.crypto.randomUUID();
-}
-
-interface CommandValueSchema<T> {
-  safeParse(
-    input: unknown,
-  ):
-    | { data: T; success: true }
-    | { error: { issues: readonly { message: string }[] }; success: false };
-}
-
-function parseCommandValue<T>(
-  schema: CommandValueSchema<T>,
-  input: unknown,
-): T {
-  const result = schema.safeParse(input);
-  if (result.success) return result.data;
-  throw new EditorCommandError(
-    'invalid-command',
-    result.error.issues[0]?.message ?? 'The edit is not valid.',
-  );
-}
-
-function normalizedName(name: string): string {
-  return name.trim().toLowerCase();
-}
-
-function uniqueName(existingNames: string[], preferredName: string): string {
-  const baseName = preferredName.trim();
-  const normalizedNames = new Set(existingNames.map(normalizedName));
-  if (!normalizedNames.has(normalizedName(baseName))) return baseName;
-
-  let suffix = 2;
-  while (normalizedNames.has(normalizedName(`${baseName} ${suffix}`))) {
-    suffix += 1;
-  }
-  return `${baseName} ${suffix}`;
-}
-
-function createEntityId(
-  project: Project,
-  idFactory: ProjectEntityIdFactory,
-): string {
-  const existingIds = projectEntityIds(project);
-  let id = ProjectEntityIdSchema.parse(idFactory());
-  while (existingIds.has(id)) id = ProjectEntityIdSchema.parse(idFactory());
-  return id;
-}
-
-function assertNewEntityId(project: Project, id: string): string {
-  return assertNewEntityIds(project, [id])[0];
-}
-
-function assertNewEntityIds(
-  project: Project,
-  ids: readonly string[],
-): string[] {
-  const reserved = projectEntityIds(project);
-  if (reserved.size + ids.length > PROJECT_LIMITS.totalEntities) {
-    throw new EditorCommandError(
-      'invalid-command',
-      `Projects cannot contain more than ${PROJECT_LIMITS.totalEntities} total entities.`,
-    );
-  }
-  return ids.map((id) => {
-    const parsedId = parseCommandValue(ProjectEntityIdSchema, id);
-    if (reserved.has(parsedId)) {
-      throw new EditorCommandError(
-        'duplicate-entity-id',
-        `Entity ID "${parsedId}" is already in use.`,
-      );
-    }
-    reserved.add(parsedId);
-    return parsedId;
-  });
 }
 
 function tokenIndex(project: Project, id: string): number {
@@ -429,28 +326,6 @@ function sceneIndex(project: Project, id: string): number {
     throw new EditorCommandError(
       'missing-entity',
       `Scene "${id}" does not exist.`,
-    );
-  }
-  return index;
-}
-
-function songIndex(project: Project, id: string): number {
-  const index = project.songs.findIndex((song) => song.id === id);
-  if (index === -1) {
-    throw new EditorCommandError(
-      'missing-entity',
-      `Song "${id}" does not exist.`,
-    );
-  }
-  return index;
-}
-
-function cueIndex(song: Song, id: string): number {
-  const index = song.cues.findIndex((cue) => cue.id === id);
-  if (index === -1) {
-    throw new EditorCommandError(
-      'missing-entity',
-      `Cue "${id}" does not exist.`,
     );
   }
   return index;
@@ -512,44 +387,6 @@ function assertUniqueSceneName(
     throw new EditorCommandError(
       'duplicate-name',
       `Scene name "${name}" is already in use.`,
-    );
-  }
-}
-
-function assertUniqueSongName(
-  project: Project,
-  name: string,
-  exceptId?: string,
-): void {
-  if (
-    project.songs.some(
-      (song) =>
-        song.id !== exceptId &&
-        normalizedName(song.name) === normalizedName(name),
-    )
-  ) {
-    throw new EditorCommandError(
-      'duplicate-name',
-      `Song name "${name}" is already in use.`,
-    );
-  }
-}
-
-function assertUniqueCueName(
-  song: Song,
-  name: string,
-  exceptId?: string,
-): void {
-  if (
-    song.cues.some(
-      (cue) =>
-        cue.id !== exceptId &&
-        normalizedName(cue.name) === normalizedName(name),
-    )
-  ) {
-    throw new EditorCommandError(
-      'duplicate-name',
-      `Cue name "${name}" is already in use.`,
     );
   }
 }
@@ -663,19 +500,6 @@ function updateScene(
   return { ...project, scenes };
 }
 
-function updateSong(
-  project: Project,
-  id: string,
-  updater: (song: Song) => Song,
-): Project {
-  const index = songIndex(project, id);
-  const nextSong = updater(project.songs[index]);
-  if (nextSong === project.songs[index]) return project;
-  const songs = [...project.songs];
-  songs[index] = nextSong;
-  return { ...project, songs };
-}
-
 function layerTargetsEqual(left: LayerTarget, right: LayerTarget): boolean {
   if (left.kind !== right.kind) return false;
   if (left.kind === 'leds' && right.kind === 'leds')
@@ -763,19 +587,6 @@ function insertKeyframeByBeat<T extends { beat: number }>(
     else high = middle;
   }
   return [...keyframes.slice(0, low), keyframe, ...keyframes.slice(low)];
-}
-
-function assertCollectionCapacity(
-  current: number,
-  maximum: number,
-  subject: string,
-): void {
-  if (current >= maximum) {
-    throw new EditorCommandError(
-      'invalid-command',
-      `${subject} cannot contain more than ${maximum} items.`,
-    );
-  }
 }
 
 export function createDefaultProject(
@@ -889,65 +700,6 @@ export function createSceneDuplicatedCommand(
     layerIds: source.layers.map(nextId),
     sourceId,
     type: 'scene-duplicated',
-  };
-}
-
-export function createSongAddedCommand(
-  project: Project,
-  idFactory: ProjectEntityIdFactory = generateProjectEntityId,
-): Extract<EditorCommand, { type: 'song-added' }> {
-  return { id: createEntityId(project, idFactory), type: 'song-added' };
-}
-
-export function createSongDuplicatedCommand(
-  project: Project,
-  sourceId: string,
-  idFactory: ProjectEntityIdFactory = generateProjectEntityId,
-): Extract<EditorCommand, { type: 'song-duplicated' }> {
-  const source = project.songs[songIndex(project, sourceId)];
-  const reserved = projectEntityIds(project);
-  const nextId = () => {
-    let id = ProjectEntityIdSchema.parse(idFactory());
-    while (reserved.has(id)) id = ProjectEntityIdSchema.parse(idFactory());
-    reserved.add(id);
-    return id;
-  };
-  return {
-    cueIds: source.cues.map(nextId),
-    id: nextId(),
-    sourceId,
-    type: 'song-duplicated',
-  };
-}
-
-export function createSongCueAddedCommand(
-  project: Project,
-  songId: string,
-  sceneId: string,
-  idFactory: ProjectEntityIdFactory = generateProjectEntityId,
-): Extract<EditorCommand, { type: 'song-cue-added' }> {
-  songIndex(project, songId);
-  sceneIndex(project, sceneId);
-  return {
-    id: createEntityId(project, idFactory),
-    sceneId,
-    songId,
-    type: 'song-cue-added',
-  };
-}
-
-export function createSongCueDuplicatedCommand(
-  project: Project,
-  songId: string,
-  id: string,
-  idFactory: ProjectEntityIdFactory = generateProjectEntityId,
-): Extract<EditorCommand, { type: 'song-cue-duplicated' }> {
-  cueIndex(project.songs[songIndex(project, songId)], id);
-  return {
-    id,
-    newId: createEntityId(project, idFactory),
-    songId,
-    type: 'song-cue-duplicated',
   };
 }
 
@@ -1118,6 +870,9 @@ export function applyEditorCommand(
   project: Project,
   command: EditorCommand,
 ): Project {
+  if (isSongEditorCommand(command)) {
+    return applySongEditorCommand(project, command);
+  }
   switch (command.type) {
     case 'project-renamed': {
       const name = parseCommandValue(ProjectNameSchema, command.name);
@@ -1430,204 +1185,6 @@ export function applyEditorCommand(
         return { ...scene, ledStates };
       });
     }
-    case 'song-added': {
-      assertCollectionCapacity(
-        project.songs.length,
-        PROJECT_LIMITS.songs,
-        'Projects',
-      );
-      const song = parseCommandValue(SongSchema, {
-        cues: [],
-        id: assertNewEntityId(project, command.id),
-        launchQuantization: 'next-bar',
-        name: uniqueName(
-          project.songs.map(({ name }) => name),
-          `Song ${project.songs.length + 1}`,
-        ),
-        timing: structuredClone(project.timing),
-      });
-      return { ...project, songs: [...project.songs, song] };
-    }
-    case 'song-updated':
-      return updateSong(project, command.id, (song) => {
-        const name = command.changes.name ?? song.name;
-        const timing =
-          command.changes.timing === undefined
-            ? song.timing
-            : parseCommandValue(ProjectTimingSchema, command.changes.timing);
-        const launchQuantization =
-          command.changes.launchQuantization === undefined
-            ? song.launchQuantization
-            : parseCommandValue(
-                SongLaunchQuantizationSchema,
-                command.changes.launchQuantization,
-              );
-        const next = parseCommandValue(SongSchema, {
-          ...song,
-          launchQuantization,
-          name,
-          timing,
-        });
-        assertUniqueSongName(project, next.name, song.id);
-        return next.name === song.name &&
-          next.timing.previewBpm === song.timing.previewBpm &&
-          next.timing.timeSignature.numerator ===
-            song.timing.timeSignature.numerator &&
-          next.timing.timeSignature.denominator ===
-            song.timing.timeSignature.denominator &&
-          next.launchQuantization === song.launchQuantization
-          ? song
-          : next;
-      });
-    case 'song-duplicated': {
-      assertCollectionCapacity(
-        project.songs.length,
-        PROJECT_LIMITS.songs,
-        'Projects',
-      );
-      const sourcePosition = songIndex(project, command.sourceId);
-      const source = project.songs[sourcePosition];
-      if (command.cueIds.length !== source.cues.length) {
-        throw new EditorCommandError(
-          'invalid-command',
-          'Song duplication requires one new ID per cue.',
-        );
-      }
-      const ids = assertNewEntityIds(project, [command.id, ...command.cueIds]);
-      const duplicate = parseCommandValue(SongSchema, {
-        ...structuredClone(source),
-        cues: source.cues.map((cue, index) => ({
-          ...structuredClone(cue),
-          id: ids[index + 1],
-        })),
-        id: ids[0],
-        name: uniqueName(
-          project.songs.map(({ name }) => name),
-          `${source.name} Copy`,
-        ),
-      });
-      const songs = [...project.songs];
-      songs.splice(sourcePosition + 1, 0, duplicate);
-      return { ...project, songs };
-    }
-    case 'song-deleted': {
-      const index = songIndex(project, command.id);
-      return {
-        ...project,
-        songs: project.songs.filter((_, position) => position !== index),
-      };
-    }
-    case 'song-moved': {
-      const index = songIndex(project, command.id);
-      if (
-        !Number.isInteger(command.toIndex) ||
-        command.toIndex < 0 ||
-        command.toIndex >= project.songs.length
-      ) {
-        throw new EditorCommandError(
-          'invalid-command',
-          'Song destination is outside the project.',
-        );
-      }
-      if (index === command.toIndex) return project;
-      const songs = [...project.songs];
-      const [song] = songs.splice(index, 1);
-      songs.splice(command.toIndex, 0, song);
-      return { ...project, songs };
-    }
-    case 'song-cue-added':
-      sceneIndex(project, command.sceneId);
-      return updateSong(project, command.songId, (song) => {
-        assertCollectionCapacity(
-          song.cues.length,
-          PROJECT_LIMITS.cuesPerSong,
-          'Songs',
-        );
-        const scene = project.scenes[sceneIndex(project, command.sceneId)];
-        const cue = parseCommandValue(SongCueSchema, {
-          advance: { kind: 'manual' },
-          id: assertNewEntityId(project, command.id),
-          name: uniqueName(
-            song.cues.map(({ name }) => name),
-            scene.name,
-          ),
-          sceneId: scene.id,
-        });
-        return { ...song, cues: [...song.cues, cue] };
-      });
-    case 'song-cue-updated':
-      return updateSong(project, command.songId, (song) => {
-        const index = cueIndex(song, command.id);
-        const cue = song.cues[index];
-        if (command.changes.sceneId !== undefined)
-          sceneIndex(project, command.changes.sceneId);
-        const next = parseCommandValue(SongCueSchema, {
-          ...cue,
-          ...command.changes,
-          advance:
-            command.changes.advance === undefined
-              ? cue.advance
-              : parseCommandValue(CueAdvanceSchema, command.changes.advance),
-        });
-        assertUniqueCueName(song, next.name, cue.id);
-        if (
-          next.name === cue.name &&
-          next.sceneId === cue.sceneId &&
-          JSON.stringify(next.advance) === JSON.stringify(cue.advance)
-        )
-          return song;
-        const cues = [...song.cues];
-        cues[index] = next;
-        return { ...song, cues };
-      });
-    case 'song-cue-duplicated':
-      return updateSong(project, command.songId, (song) => {
-        assertCollectionCapacity(
-          song.cues.length,
-          PROJECT_LIMITS.cuesPerSong,
-          'Songs',
-        );
-        const index = cueIndex(song, command.id);
-        const source = song.cues[index];
-        const duplicate = parseCommandValue(SongCueSchema, {
-          ...structuredClone(source),
-          id: assertNewEntityId(project, command.newId),
-          name: uniqueName(
-            song.cues.map(({ name }) => name),
-            `${source.name} Copy`,
-          ),
-        });
-        const cues = [...song.cues];
-        cues.splice(index + 1, 0, duplicate);
-        return { ...song, cues };
-      });
-    case 'song-cue-deleted':
-      return updateSong(project, command.songId, (song) => {
-        const index = cueIndex(song, command.id);
-        return {
-          ...song,
-          cues: song.cues.filter((_, position) => position !== index),
-        };
-      });
-    case 'song-cue-moved':
-      return updateSong(project, command.songId, (song) => {
-        const index = cueIndex(song, command.id);
-        if (
-          !Number.isInteger(command.toIndex) ||
-          command.toIndex < 0 ||
-          command.toIndex >= song.cues.length
-        ) {
-          throw new EditorCommandError(
-            'invalid-command',
-            'Cue destination is outside the song.',
-          );
-        }
-        if (index === command.toIndex) return song;
-        const cues = [...song.cues];
-        const [cue] = cues.splice(index, 1);
-        cues.splice(command.toIndex, 0, cue);
-        return { ...song, cues };
-      });
     case 'group-added': {
       assertCollectionCapacity(
         project.groups.length,
