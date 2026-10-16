@@ -3,5 +3,6 @@ dist/
 target/
 apps/desktop/src-tauri/gen/
 firmware/controller/build/
+firmware/neopixel-smoke/build/
 .DS_Store
 *.log
