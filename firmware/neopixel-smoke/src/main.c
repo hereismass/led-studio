@@ -52,10 +52,10 @@ int main(void) {
     return 0;
   }
 
-  LOG_INF("One GRB pixel on D0: off, red, green, blue, white at 25/255");
+  LOG_INF("One RGB pixel on D0: off, red, green, blue, white at 25/255");
   while (true) {
     for (size_t i = 0U; i < ARRAY_SIZE(sequence); i += 1U) {
-      /* The GPIO driver rewrites this buffer into GRB order in place. */
+      /* The GPIO driver may rewrite this buffer into wire order in place. */
       struct led_rgb frame = sequence[i];
 
       ret = led_strip_update_rgb(pixel, &frame, 1U);

@@ -10,7 +10,7 @@
     compatible = "worldsemi,ws2812-gpio";
     zephyr,deferred-init;
     chain-length = <1>;
-    color-mapping = <LED_COLOR_ID_GREEN LED_COLOR_ID_RED LED_COLOR_ID_BLUE>;
+    color-mapping = <LED_COLOR_ID_RED LED_COLOR_ID_GREEN LED_COLOR_ID_BLUE>;
     gpios = <&xiao_d 0 GPIO_ACTIVE_HIGH>;
     reset-delay = <300>;
   };

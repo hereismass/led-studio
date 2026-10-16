@@ -5,7 +5,8 @@ NeoPixel Mini Button. The ten-LED application in `../controller` is independent
 and unchanged.
 
 - Data: XIAO **D0** (nRF52840 **P0.02**), active high.
-- Wire channel order: **GRB**.
+- Wire channel order: **RGB**. Changed from GRB after the initial hardware test
+  showed swapped red/green output; this revised order awaits hardware confirmation.
 - Repeats **off → red → green → blue → dim white**, approximately one second
   per state (five seconds per cycle).
 - Every lit channel is **25/255**, approximately **9.8%** duty cycle, including
@@ -53,11 +54,12 @@ The local build completed for `xiao_ble/nrf52840` using the environment above.
 The UF2 is 112,640 bytes (220 blocks), with nRF52840 family ID `0xADA52840`
 and application start address `0x27000`. Its block headers, numbering, address
 range, initial stack/reset vectors, and payload equality with `zephyr.bin`
-were checked. The compiled devicetree confirms one pixel, GRB, P0.02,
+were checked. The compiled devicetree confirms one pixel, RGB, P0.02,
 deferred initialization, and the 300-microsecond reset period.
 
-The existing controller runtime host tests also passed. No hardware was flashed
-or physically tested.
+The existing controller runtime host tests passed during the initial build.
+The user subsequently flashed and ran the GRB version; the revised RGB build
+has not been flashed or physically tested.
 
 ## Wiring for the later hardware test
 
